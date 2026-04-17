@@ -928,15 +928,25 @@ def check_and_fill(vacancy_page):
             if 'applicant/vacancy_response' in vacancy_page.url:
                 solve_form_with_ai(vacancy_page, f"Название: {title}\nОписание: {description}")
             else:
-                # Ждем появления текстового поля (HH иногда тупит)
-                vacancy_page.locator('[data-qa="textarea-native-wrapper"]').locator('textarea').first.fill(cover_letter)
 
-                # Нажимаем отправить
-                if vacancy_page.locator('[data-qa="modal-overlay"]').is_visible():
-                    vacancy_page.locator('[data-qa="vacancy-response-submit-popup"]').click()
+                if vacancy_page.locator('[data-qa="textarea-native-wrapper"]').is_visible():
+                    # Ждем появления текстового поля (HH иногда тупит)
+                    vacancy_page.locator('[data-qa="textarea-native-wrapper"]').locator('textarea').first.fill(
+                        cover_letter)
+
+                    # Нажимаем отправить
+                    if vacancy_page.locator('[data-qa="modal-overlay"]').is_visible():
+                        vacancy_page.locator('[data-qa="vacancy-response-submit-popup"]').click()
+                    else:
+                        vacancy_page.locator('[data-qa="vacancy-response-letter-submit"]').click()
+                    print(f"Откликнулись на: {title} - {vacancy_page.url}")
                 else:
-                    vacancy_page.locator('[data-qa="vacancy-response-letter-submit"]').click()
-                print(f"Откликнулись на: {title} - {vacancy_page.url}")
+                    vacancy_page.locator('[data-qa="vacancy-response-link-view-topic"]').click()
+                    vacancy_page.locator('[data-qa="chatik-chat-message-applicant-action"]').click()
+                    vacancy_page.locator('[data-qa="chatik-new-message-text"]').first.fill(cover_letter)
+                    vacancy_page.locator('[data-qa="chatik-do-send-message"]').click()
+                    print(f"Откликнулись на: {title} - {vacancy_page.url}")
+
 
         else:
             print(f"Уже откликнулись или кнопка недоступна: {vacancy_page.url}")
