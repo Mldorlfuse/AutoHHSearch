@@ -723,7 +723,11 @@ QA Engineer с 5 годами опыта в тестировании веб-пр
 
 Всталяй ссылку без гипер ссылок, просто как текст
 
-Обязательно пиши на русском языке"""
+Обязательно пиши на русском языке
+
+Я заметил что иногда ты пишешь в конце меня как Санья или Сания. Не делай так. Меня зовут Александр
+
+"""
 
 resume_context = """
 Тестировщик
@@ -893,126 +897,6 @@ def get_gemini_response(vacancy_text):
 
     return None  # Вместо текста ошибки возвращаем Ничего
 
-# def check_and_fill(vacancy_page):
-#     vacancy_page.set_viewport_size({'width': 1080, 'height': 1920})
-#     try:
-#         # Ждем кнопку отклика
-#         respond_button = vacancy_page.locator('[data-qa="vacancy-response-link-top"]').first
-#         if respond_button.is_visible():
-#             title = vacancy_page.locator('[data-qa="vacancy-title"]').inner_text()
-#
-#             description_locators = vacancy_page.locator('[data-qa="vacancy-description"]').all()
-#             # Собираем текст из каждого блока, очищаем от лишних пробелов и объединяем в одну строку
-#             description_parts = [loc.inner_text().strip() for loc in description_locators]
-#             description = "\n".join([p for p in description_parts if p])  # Оставляем только непустые части
-#
-#             # Если вдруг описание пустое (защита от багов)
-#             if not description:
-#                 description = "Описание вакансии не найдено"
-#
-#             cover_letter = get_gemini_response(f"Название: {title}\nОписание: {description}")
-#
-#             if cover_letter is None or not isinstance(cover_letter, str) or cover_letter.strip() == "":
-#                 print(f"Пропускаю вакансию '{title}': письмо не получено (ошибка API или лимиты).")
-#                 return
-#
-#             respond_button.click()
-#
-#             time.sleep(3)
-#
-#             if vacancy_page.locator('[data-qa="magritte-alert"]').is_visible() or \
-#                     vacancy_page.locator('.vacancy-response-popup').is_visible():
-#
-#                 print("Появилось предупреждение. Пытаюсь подтвердить отклик...")
-#
-#                 # 1. Вариант для Magritte: ищем кнопку по тексту "Всё равно откликнуться"
-#                 confirm_btn = vacancy_page.get_by_role("button", name="Всё равно откликнуться")
-#
-#                 # 2. Вариант для релокации (твой старый)
-#                 relocation_btn = vacancy_page.locator('[data-qa="relocation-warning-confirm"]')
-#
-#                 if confirm_btn.is_visible():
-#                     confirm_btn.click()
-#                     print("Нажато: 'Всё равно откликнуться'")
-#                 elif relocation_btn.is_visible():
-#                     relocation_btn.click()
-#                     print("Нажато подтверждение релокации")
-#
-#             if 'applicant/vacancy_response' in vacancy_page.url:
-#                 # 1. Если нас перекинуло на страницу с вопросами
-#                 solve_form_with_ai(vacancy_page, f"Название: {title}\nОписание: {description}")
-#             else:
-#                 # 2. Если мы остались в попапе или открылся чат
-#                 try:
-#                     # Даем попапу окончательно прогрузиться после кликов по предупреждениям
-#
-#                     if vacancy_page.locator('[data-qa="chatik-root"]').is_visible():
-#                         # ... (логика чата без изменений)
-#                         print(f"Открылся чат для: {title}")
-#                         chat_btn = vacancy_page.locator('[data-qa="chatik-chat-message-applicant-action"]')
-#                         if chat_btn.is_visible(): chat_btn.click()
-#                         vacancy_page.locator('[data-qa="chatik-new-message-text"]').first.fill(cover_letter)
-#                         vacancy_page.locator('[data-qa="chatik-do-send-message"]').click()
-#
-#                     else:
-#                         # 3. Обычный стандартный попап отклика
-#                         # Ждем, когда кнопка добавления письма станет реально доступной для клика
-#                         letter_toggle = vacancy_page.locator('[data-qa="vacancy-response-letter-toggle"]')
-#
-#                         if letter_toggle.is_visible():
-#                             print("Разворачиваю поле сопроводительного письма...")
-#                             letter_toggle.click()
-#
-#                             # Ждем, когда textarea станет не просто видимой, а готовой к вводу
-#                             # Используем комбинацию селекторов и фильтр видимости
-#                             letter_input = vacancy_page.locator(
-#                                 'textarea[name="letter"], [data-qa="vacancy-response-popup-form-letter-input"]').filter(
-#                                 visible=True).first
-#
-#                             try:
-#                                 # Увеличиваем ожидание и проверяем кликабельность
-#                                 letter_input.wait_for(state="visible", timeout=7000)
-#
-#                                 # Кликаем по самому полю ввода (это важно для активации скриптов на странице HH)
-#                                 letter_input.click()
-#
-#                                 # Заполняем письмо
-#                                 letter_input.fill(cover_letter)
-#
-#                                 # Проверка: если после fill поле осталось пустым, пробуем метод type
-#                                 if letter_input.input_value() == "":
-#                                     letter_input.press_sequentially(cover_letter, delay=10)
-#
-#                                 print("Сопроводительное письмо успешно заполнено.")
-#
-#                             except Exception as e:
-#                                 print(f"Не удалось заполнить textarea: {e}")
-#
-#                         # Кнопка отправки
-#                         submit_btn = vacancy_page.locator('[data-qa="vacancy-response-submit-popup"]')
-#                         old_submit_btn = vacancy_page.locator('[data-qa="vacancy-response-letter-submit"]')
-#
-#                         # Ждем, чтобы кнопка была кликабельной (не перекрыта анимацией)
-#                         if submit_btn.is_visible():
-#                             submit_btn.wait_for(state="stable")
-#                             submit_btn.click()
-#                         elif old_submit_btn.is_visible():
-#                             old_submit_btn.click()
-#                         else:
-#                             vacancy_page.get_by_role("button", name=re.compile(r"Откликнуться", re.IGNORECASE)).click()
-#
-#                         print(f"Успешный отклик на: {title}")
-#
-#                 except Exception as e:
-#                     print(f"Не удалось завершить отклик для {title}: {e}")
-#
-#             time.sleep(3)
-#
-#         else:
-#             print(f"Уже откликнулись или кнопка недоступна: {vacancy_page.url}")
-#     except Exception as e:
-#         print(f"Ошибка внутри страницы вакансии - {vacancy_page.url} : {e}")
-
 def check_and_fill(vacancy_page):
     vacancy_page.set_viewport_size({'width': 1080, 'height': 1920})
     try:
@@ -1038,6 +922,8 @@ def check_and_fill(vacancy_page):
 
             respond_button.click()
 
+            time.sleep(5)
+
             if vacancy_page.locator('[data-qa="magritte-alert"]').is_visible() or \
                             vacancy_page.locator('.vacancy-response-popup').is_visible():
 
@@ -1056,10 +942,12 @@ def check_and_fill(vacancy_page):
                     relocation_btn.click()
                     print("Нажато подтверждение релокации")
 
+            time.sleep(5)
+
             # ТВОЙ СТАРЫЙ БЛОК ОТПРАВКИ
             if 'applicant/vacancy_response' in vacancy_page.url:
                 solve_form_with_ai(vacancy_page, f"Название: {title}\nОписание: {description}")
-            else:
+            elif 'hh.ru/vacancy' in vacancy_page.url:
                 if vacancy_page.locator('[data-qa="chatik-root"]').is_hidden():
                     # Ждем появления текстового поля (HH иногда тупит)
                     vacancy_page.locator('[data-qa="textarea-native-wrapper"]').locator('textarea').first.fill(
@@ -1116,8 +1004,9 @@ def solve_form_with_ai(page, vacancy_context=""):
     prompt = f"""
     ВАКАНСИЯ: {vacancy_context}
     МОЕ РЕЗЮМЕ: {resume_context}
+    Промпт для сопроводительного письма {system_prompt}
     ЗП: 80000 руб.
-
+    
     АНКЕТА (вопросы):
     {json.dumps(form_structure, ensure_ascii=False)}
 
@@ -1134,6 +1023,7 @@ def solve_form_with_ai(page, vacancy_context=""):
     """
 
     raw_response = get_gemini_response_for_questions(prompt)
+
     if not raw_response: return
 
     try:
@@ -1242,7 +1132,7 @@ def test_hh():
         # Используем WHILE, так как кнопки "Новые вакансии" исчезают после клика
         while True:
             # Всегда берем ПЕРВУЮ видимую кнопку счетчика новых вакансий
-            new_vacancy_btn = page.locator('[data-qa="autosearch__results-counter_total"]').first
+            new_vacancy_btn = page.locator('[data-qa="autosearch__results-counter_new"]').last
 
             # ВОЗМОЖНЫЕ ТЕГИ
             # autosearch__results-counter_total
@@ -1263,11 +1153,15 @@ def test_hh():
                 # Кликаем по кнопке (например, "56 новых вакансий")
                 new_vacancy_btn.click()
 
-                # ДЛЯ ОБЩИХ ПОИСКОВ
-                page.wait_for_selector('[data-qa="vacancy-serp__vacancy"]', timeout=10000)
+                # ------
 
-                page.locator('[data-qa="search-period-menu"]').click()
-                page.locator('[data-qa="order-by-1"]').click()
+                # ДЛЯ ОБЩИХ ПОИСКОВ
+                # page.wait_for_selector('[data-qa="vacancy-serp__vacancy"]', timeout=10000)
+                #
+                # page.locator('[data-qa="search-period-menu"]').click()
+                # page.locator('[data-qa="order-by-1"]').click()
+
+                # ------
 
                 # Ждем загрузки результатов
                 page.wait_for_selector('[data-qa="vacancy-serp__vacancy"]', timeout=10000)
