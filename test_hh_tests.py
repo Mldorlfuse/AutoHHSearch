@@ -32,6 +32,9 @@ class Skill:
     COPYWRITING = "Копирайтинг"
     MATH_STATS = "Математическая статистика"
     MACHINE_LEARNING = "Машинное обучение"
+    SQL = "SQL"
+    LINUX = "Linux"
+    POSTGRESQL = "PostgreSQL"
 
 class Mode:
     THEORY = "Теория"
@@ -45,63 +48,104 @@ class Level:
 # Пример использования в конфиге:
 TASKS_TO_RUN = [
     {
-        "name": Skill.JAVA,
+        "name": Skill.SQL,
         "mode": Mode.PRACTICE,
-        "level": Level.BASIC
+        "level": Level.ADVANCED
     }
 ]
 
+
 def get_gemini_response_for_questions(prompt):
-    api_key = "AIzaSyCgBbwarZGeDgr3g6xaQP0asctmXwug_EA"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemma-3n-e2b-it:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
+    # Твой новый ключ от ProxyAPI (начинается на PA-...)
+    api_key = "sk-Uzay8S0pApr49nG350VVRRRNbtsks7wu"
+
+    # URL для ProxyAPI.
+    # ВНИМАНИЕ: Убедись, что модель gemma-3-27b-it поддерживается прокси.
+    # Если будет ошибка 404, используй: gemini-2.5-flash
+    url = "https://api.proxyapi.ru/google/v1beta/models/gemini-2.5-flash-lite:generateContent"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"  # Ключ переехал сюда
+    }
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.7, "topP": 0.95}
+        "generationConfig": {
+            "temperature": 0.7,
+            "topP": 0.95
+        }
     }
 
     max_retries = 10
     for attempt in range(max_retries):
         try:
+            # Убрали ?key= из URL
             response = requests.post(url, headers=headers, json=payload, timeout=60)
-            if response.status_code == 503 or response.status_code == 429:
-                time.sleep(10)  # Увеличил паузу при перегрузке
+
+            # Стандартная обработка перегрузки
+            if response.status_code in [429, 503]:
+                time.sleep(10)
                 continue
+
             response.raise_for_status()
             data = response.json()
+
+            # Структура ответа остается такой же, как у оригинального Google API
             return data["candidates"][0]["content"]["parts"][0]["text"]
+
         except Exception as e:
             print(f"Ошибка API (попытка {attempt + 1}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(5)
 
-    return None  # Вместо текста ошибки возвращаем Ничего
+    return None
 
 def get_gemini_response_for_practice(prompt):
-    api_key = "AIzaSyCgBbwarZGeDgr3g6xaQP0asctmXwug_EA"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
+    # Твой ключ от ProxyAPI (замени на реальный)
+    api_key = "sk-Uzay8S0pApr49nG350VVRRRNbtsks7wu"
+
+    # Меняем URL на прокси-сервер
+    # ВАЖНО: Убедись, что модель gemma-3-27b-it активна в ProxyAPI.
+    # Если будет ошибка 404, попробуй gemini-2.5-flash
+    url = "https://api.proxyapi.ru/google/v1beta/models/gemini-2.5-flash-lite:generateContent"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.7, "topP": 0.95}
+        "generationConfig": {
+            "temperature": 0.7,
+            "topP": 0.95
+        }
     }
 
     max_retries = 10
     for attempt in range(max_retries):
         try:
+            # Выполняем запрос без ?key= в URL
             response = requests.post(url, headers=headers, json=payload, timeout=60)
-            if response.status_code == 503 or response.status_code == 429:
-                time.sleep(10)  # Увеличил паузу при перегрузке
+
+            # Обработка лимитов и временных сбоев
+            if response.status_code in [429, 503]:
+                time.sleep(10)
                 continue
+
             response.raise_for_status()
             data = response.json()
+
+            # Структура ответа у ProxyAPI полностью совпадает с оригиналом Google
             return data["candidates"][0]["content"]["parts"][0]["text"]
+
         except Exception as e:
             print(f"Ошибка API (попытка {attempt + 1}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(5)
 
-    return None  # Вместо текста ошибки возвращаем Ничего
+    return None
 
 def hh_test_setup(page, task):
     """
@@ -323,27 +367,39 @@ def solve_test_practice(page, skill_name):
         error_report = ""
 
         if not test_chips:
+            # 1. Проверяем стандартный результат (как было)
             res_locator = page.locator('[data-qa="test-case-actual-result"]').first
-            if res_locator.is_visible():
+            # 2. Проверяем специфическую ошибку синтаксиса SQL (из твоего HTML)
+            sql_error_locator = page.locator('[data-qa="sql-run-error"]').first
+
+            if sql_error_locator.is_visible():
+                all_tests_passed = False
+                # Извлекаем текст ошибки синтаксиса (например, ERROR: syntax error...)
+                error_report = f"SQL ERROR: {sql_error_locator.inner_text().strip()}"
+            elif res_locator.is_visible():
                 res_text = res_locator.inner_text()
                 if any(x in res_text.lower() for x in ["error", "exception", "trace", "expected", "не совпадает"]):
                     all_tests_passed = False
                     error_report = res_text
         else:
+            # Проверяем первые 3 "чипса" (тест-кейса)
             chips_to_check = test_chips[:3]
             for index, chip in enumerate(chips_to_check):
                 chip.click()
                 page.wait_for_timeout(600)
 
+                # Синхронное получение текста
                 input_data = page.locator('[data-qa="test-case-input-data"]').inner_text().strip()
                 expected = page.locator('[data-qa="test-case-expected-data"]').inner_text().strip()
                 actual = page.locator('[data-qa="test-case-actual-result"]').inner_text().strip()
+
+                # Проверка иконки ошибки внутри чипса
                 has_error_icon = chip.locator('img[src*="error"]').count() > 0
 
                 if expected != actual or has_error_icon:
                     all_tests_passed = False
                     error_report += f"\nОШИБКА В ТЕСТЕ {index + 1}:\nВходные: {input_data}\nОжидалось: {expected}\nПолучено: {actual}\n"
-                    break  # Прекращаем проверку остальных чипсов, если нашли ошибку
+                    break  # Выходим из цикла при первой ошибке
 
         if all_tests_passed:
             print("✅ Все тесты пройдены!")
@@ -429,9 +485,21 @@ def test_hh_navigation():
             skill_name = task["name"]
             print(f"🔎 Обработка навыка: {skill_name}")
 
-            # Ищем карточку навыка
-            strict_regex = re.compile(rf"\b{re.escape(skill_name)}\b", re.I)
-            card = page.locator("[data-qa='skills-verification-method-container']").filter(has_text=strict_regex)
+            strict_skills = ["java", "javascript", "sql", "postgresql"]
+
+            if skill_name.lower() in strict_skills:
+                # Вместо поиска по всей карточке, ищем строгое совпадение в заголовке внутри карточки
+                # Это гарантирует, что SQL не найдет PostgreSQL
+                card = page.locator("[data-qa='skills-verification-method-container']").filter(
+                    has=page.locator("[data-qa='verification-method-title']",
+                                     has_text=re.compile(rf"^{re.escape(skill_name)}$", re.I))
+                )
+            else:
+                # Для остальных навыков оставляем как было (поиск подстроки во всей карточке)
+                card = page.locator("[data-qa='skills-verification-method-container']").filter(has_text=skill_name)
+
+            # Обязательный .first для предотвращения ошибки strict mode violation
+            card = card.first
 
             if card.count() > 0:
                 print(f"🎯 Кликаю по карточке: {skill_name}")
