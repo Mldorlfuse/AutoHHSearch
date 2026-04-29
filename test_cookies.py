@@ -12,6 +12,7 @@ def test_cookies():
             slow_mo=500
         )
         page = context.new_page()
+        page.set_viewport_size({'width': 1080, 'height': 1820})
         page.goto("https://hh.ru/login")
 
         print("У тебя есть время, чтобы залогиниться вручную...")

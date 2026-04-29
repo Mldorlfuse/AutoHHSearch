@@ -12,12 +12,12 @@ user_data_dir = os.path.expanduser("~/Documents/HH_Automation_Profile")
 system_prompt = """Ты — опытный карьерный консультант и копирайтер. Твоя задача — написать идеальное сопроводительное письмо отклика на вакансию.
 
 ПРАВИЛА И ОГРАНИЧЕНИЯ:
-1. ЖЕСТКИЙ ЛИМИТ ОБЪЕМА: Твой ответ должен быть максимально кратким. Ответь кратко, Лимит 400 токенов
-2. СТРУКТУРА:
+1. СТРУКТУРА:
    - Приветствие и название должности.
    - 1-2 главных аргумента из резюме, почему кандидат идеально подходит (только факты, без клише вроде "я коммуникабельный").
    - Вежливый призыв к действию (готовность к интервью).
-3. ТОН: Профессиональный, уверенный, лаконичный. Без лишних расшаркиваний и лести.
+2. ТОН: Профессиональный, уверенный, лаконичный. Без лишних расшаркиваний и лести.
+3. Твой ответ отправится автоматически, поэтому не пиши что-то вроде "[укажите источник вакансии, например, hh.ru]"
 
 Напиши ТОЛЬКО текст сопроводительного письма, без вступительных фраз вроде "Вот ваше письмо:".
 
@@ -25,12 +25,12 @@ system_prompt = """Ты — опытный карьерный консульта
 
 Меня зовут - Марков Александр
 
-Вконце письма всегда пиши : "
+В конце письма всегда пиши : "
 С уважением,
 Марков Александр
 Telegram: https://t.me/Mldorlfuse
-+7 912 461-14-11
-sania.4game@gmail.com
+Телефон: +7 912 461-14-11
+Email: Sania.4game@gmail.com "
 
 Мое резюме - Тестировщик
 Уровень дохода не указан
@@ -418,7 +418,6 @@ def get_gemini_response_for_questions(prompt):
 
 def check_and_fill(vacancy_page):
     vacancy_page.set_viewport_size({'width': 1080, 'height': 1920})
-    print('------------')
     try:
         # Ждем кнопку отклика
         respond_button = vacancy_page.locator('[data-qa="vacancy-response-link-top"]').first
@@ -471,7 +470,7 @@ def check_and_fill(vacancy_page):
 
                 if vacancy_page.locator('[data-qa="chatik-root"]').is_hidden():
                     # Ждем появления текстового поля (HH иногда тупит)
-                    vacancy_page.locator('[data-qa="textarea-native-wrapper"]').locator('textarea').first.fill(
+                    vacancy_page.locator('[data-qa="textarea-native-wrapper"]').locator('textarea').first.press_sequentially(
                         cover_letter)
 
                     # Нажимаем отправить
@@ -480,10 +479,10 @@ def check_and_fill(vacancy_page):
                     else:
                         vacancy_page.locator('[data-qa="vacancy-response-letter-submit"]').click()
                     print(f"Откликнулись на: {title} - {vacancy_page.url}")
-                else:
+                elif vacancy_page.locator('#chatik-layout').is_visible():
                     vacancy_page.locator('[data-qa="vacancy-response-link-view-topic"]').nth(1).click()
                     vacancy_page.locator('[data-qa="chatik-chat-message-applicant-action"]').click()
-                    vacancy_page.locator('[data-qa="chatik-new-message-text"]').first.fill(cover_letter)
+                    vacancy_page.locator('[data-qa="chatik-new-message-text"]').first.press_sequentially(cover_letter)
                     vacancy_page.locator('[data-qa="chatik-do-send-message"]').click()
                     print(f"Откликнулись на: {title} - {vacancy_page.url}")
 
@@ -529,7 +528,7 @@ def solve_form_with_ai(page, vacancy_context=""):
     prompt = f"""
     ВАКАНСИЯ: {vacancy_context}
     Промпт для сопроводительного письма {system_prompt}
-    Ответы на вопросы не входят в лимит указанный выше в промпте для сопроводительного письма. Этот лимит ТОЛЬКО для сопроводительного письма
+    Не пиши очень длинные ответы на вопросы, постарайся писать их более кратно и человечески
     ЗП: 80000 руб.
     
     АНКЕТА (вопросы):
@@ -561,8 +560,6 @@ def solve_form_with_ai(page, vacancy_context=""):
     except Exception as e:
         print(f"Ошибка анализа: {e}")
         return
-
-    print(ai_answers)
 
     # 3. Заполняем поля анкеты
     for index, block in enumerate(task_blocks):
@@ -611,7 +608,7 @@ def solve_form_with_ai(page, vacancy_context=""):
         if textarea.count() > 0:
             if textarea.first.is_visible():
                 clean_text = str(answer_raw).replace("|", ", ")
-                textarea.first.fill(clean_text)
+                textarea.first.press_sequentially(clean_text)
 
     # 4. Вставляем письмо (уже учитывающее анкету)
     try:
@@ -626,7 +623,7 @@ def solve_form_with_ai(page, vacancy_context=""):
         letter_input.wait_for(state="visible", timeout=3000)
         letter_input.click()  # Фокус
         letter_input.fill("")  # Очистка от старого мусора HH
-        letter_input.fill(final_letter.replace('\\n', '\n'))
+        letter_input.press_sequentially(final_letter.replace('\\n', '\n'))
 
         print("Сопроводительное письмо из JSON вставлено в анкету.")
     except Exception as e:
@@ -698,7 +695,7 @@ def test_hh():
                 # page.wait_for_selector('[data-qa="vacancy-serp__vacancy"]', timeout=10000)
                 #
                 # page.locator('[data-qa="search-period-menu"]').click()
-                # page.locator('[data-qa="order-by-1"]').click()
+                # page.locator('[data-qa="order-by-7"]').click() # 1 - день, 3 - 3 дня, 7 - неделя, 30 - месяц, 0 - все время
 
                 # ------
 
@@ -730,6 +727,7 @@ def test_hh():
                         if div.locator('[data-qa="vacancy-serp__vacancy_response"]').is_hidden():
                             continue
 
+                        print('------------')
                         print(f"Обработка: {v_title} в {e_name}")
 
                         # Открываем вакансию в новой вкладке

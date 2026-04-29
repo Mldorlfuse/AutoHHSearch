@@ -3,6 +3,8 @@ import requests
 import json
 import time
 import re
+import random
+from pynput.keyboard import Key, Controller
 from playwright.sync_api import sync_playwright
 
 class Skill:
@@ -50,7 +52,7 @@ TASKS_TO_RUN = [
     {
         "name": Skill.SQL,
         "mode": Mode.PRACTICE,
-        "level": Level.ADVANCED
+        "level": Level.INTERMEDIATE
     }
 ]
 
@@ -108,7 +110,7 @@ def get_gemini_response_for_practice(prompt):
     # Меняем URL на прокси-сервер
     # ВАЖНО: Убедись, что модель gemma-3-27b-it активна в ProxyAPI.
     # Если будет ошибка 404, попробуй gemini-2.5-flash
-    url = "https://api.proxyapi.ru/google/v1beta/models/gemini-2.5-flash-lite:generateContent"
+    url = "https://api.proxyapi.ru/google/v1beta/models/gemini-2.5-flash:generateContent"
 
     headers = {
         "Content-Type": "application/json",
@@ -195,13 +197,12 @@ def hh_test_setup(page, task):
         return False
 
 def solve_test_theory(page, skill_name):
-    # Даем странице время прогрузиться (хотя лучше использовать ожидания Playwright)
+    # Даем странице время прогрузиться
     page.wait_for_timeout(3000)
 
     print("🧠 Анализирую вопрос...")
 
-    # 1. Проверяем, не закончился ли тест (кнопка "Посмотреть результаты" или "Завершить")
-    # Если видим кнопку завершения, пробуем нажать и выходим
+    # 1. Проверка завершения теста
     finish_button = page.locator('[data-qa="footer-finish-button"]')
     if finish_button.is_visible():
         print("🏁 Вижу кнопку завершения теста.")
@@ -209,60 +210,79 @@ def solve_test_theory(page, skill_name):
             finish_button.click()
             return "FINISH"
 
-    # 2. Извлекаем текст вопроса
-    question_element = page.locator('[data-qa="text-description"]')
-    if not question_element.is_visible(timeout=5000):
-        # Если вопрос не появился за 5 сек, вероятно, тест окончен
+    # 2. Извлекаем HTML вопроса
+    question_locator = page.locator('[data-qa="text-description"]')
+    if not question_locator.is_visible(timeout=5000):
         if page.get_by_text("Посмотреть результаты").is_visible():
             return "FINISH"
         print("❌ Вопрос не найден")
         return False
 
-    question_text = question_element.inner_text().strip()
+    # Используем inner_html() для контента вопроса
+    question_content_html = question_locator.inner_html().strip()
 
-    # 3. Извлекаем варианты ответов
+    # 3. Извлекаем варианты ответов (как объекты и как HTML для ИИ)
     options_locators = page.locator('label.magritte-card___kxw8G_4-1-24').all()
-    options = [opt.inner_text().strip() for opt in options_locators]
 
-    if not options:
+    # Собираем только HTML-содержимое каждого варианта
+    options_html_list = [opt.inner_html().strip() for opt in options_locators]
+
+    if not options_html_list:
         print("❌ Варианты ответов не найдены")
         return False
 
-    # 4. Запрос к ИИ
+    # 4. Запрос к ИИ с передачей HTML
     prompt = f"""
-        Ты — ведущий эксперт (Senior) с 10-летним опытом в области: {skill_name}.
-        Твоя задача — пройти сертификационный тест и выбрать ЕДИНСТВЕННЫЙ правильный ответ.
+        Ты — ведущий эксперт (Senior) в области: {skill_name}.
+        Твоя задача — выбрать правильный ответ, анализируя предоставленную HTML-разметку вопроса и вариантов.
 
-        ВОПРОС: {question_text}
-        ВАРИАНТЫ:
-        {json.dumps(options, ensure_ascii=False, indent=2)}
+        ВОПРОС (HTML):
+        {question_content_html}
+
+        ВАРИАНТЫ ОТВЕТОВ (HTML-массив):
+        {json.dumps(options_html_list, ensure_ascii=False, indent=2)}
 
         ПРАВИЛА:
-        1. Анализируй вопрос глубоко, учитывай терминологию.
-        2. Выбери наиболее точный и профессиональный вариант.
-        3. Если вопрос с подвохом, выбирай вариант, который соответствует лучшим практикам индустрии.
+        1. Внимательно изучи код внутри тегов <code> или подобных.
+        2. Верни СТРОГО текст выбранного варианта (как он виден пользователю).
+        3. Если твой ответ не совпадает идеально — выбери наиболее подходящий.
 
         ВЕРНИ СТРОГО JSON:
         {{
-          "correct_option_text": "полная строка"
+          "correct_option_text": "текст выбранного ответа"
         }}
         """
 
     raw_response = get_gemini_response_for_questions(prompt)
-    if not raw_response: return False
 
+    # 1. Защита от пустых ответов при сбое API
+    if not raw_response or not isinstance(raw_response, str):
+        print(f"📡 API вернуло некорректный ответ (Error 500). Жму наугад.")
+        options_locators[0].click()
+        return "CONTINUE"
+
+    ai_choice = None
     try:
-        clean_json = re.sub(r'```json|```', '', raw_response).strip()
-        ai_choice = json.loads(clean_json).get("correct_option_text")
-    except Exception as e:
-        print(f"Ошибка парсинга ИИ: {e}")
-        return False
+        # 2. Улучшенный поиск JSON (ищет содержимое между { и })
+        # Это спасет, если ИИ прислал "Вот ваш ответ: { ... }"
+        match = re.search(r'\{.*\}', raw_response, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            data = json.loads(json_str)
+            ai_choice = data.get("correct_option_text")
+        else:
+            # Если JSON вообще нет, пробуем считать весь текст как ответ (план Б)
+            ai_choice = raw_response.strip()
 
-    # 5. Кликаем по варианту
+    except Exception as e:
+        print(f"❌ Ошибка парсинга: {e}")
+
+    # 5. Кликаем по варианту (сопоставляем по чистому тексту)
     found = False
     for opt_locator in options_locators:
+        # inner_text() уберет все теги и оставит чистую строку для сравнения
         if ai_choice.lower() in opt_locator.inner_text().lower():
-            print(f"✅ ИИ выбрал: {ai_choice}")
+            print(f"✅ ИИ выбрал: {opt_locator.inner_text().strip()}")
             opt_locator.click()
             found = True
             break
@@ -271,30 +291,23 @@ def solve_test_theory(page, skill_name):
         print("⚠️ Сопоставление не удалось, жму первый вариант")
         options_locators[0].click()
 
-    # 6. Кнопка "Дальше" или "Завершить"
+    # 6. Переход к следующему вопросу
+    page.wait_for_timeout(500)
     next_button = page.locator('[data-qa="footer-next-button"]')
 
-    # Если кнопка "Дальше" есть и активна - жмем и продолжаем
     if next_button.is_visible() and next_button.is_enabled():
-        # Проверяем текст кнопки. Если на ней написано "Завершить", это конец.
         btn_text = next_button.inner_text().lower()
         next_button.click()
-
-        if "завершить" in btn_text:
-            return "FINISH"
-        return "CONTINUE"
-
-    # Если кнопка финиша отдельная
-    if finish_button.is_visible() and finish_button.is_enabled():
-        finish_button.click()
-        return "FINISH"
+        return "FINISH" if "завершить" in btn_text else "CONTINUE"
 
     return False
 
 def solve_test_practice(page, skill_name):
     print(f"🛠 Работаю над практической задачей по {skill_name}...")
 
-    max_attempts = 5
+    time.sleep(5)
+
+    max_attempts = 10
     attempt = 1
     last_error = ""
 
@@ -307,23 +320,49 @@ def solve_test_practice(page, skill_name):
             return "FINISH"
         return "ERROR"
 
-    elements = page.locator('.container--kRiqW2gfRA0N2vRi').all()
-    task_text = ""
-    if elements:
-        for el in elements:
-            text_part = el.inner_text().strip()
-            if text_part:
-                task_text += text_part + "\n"
-    task_text = task_text.strip()
-
     while attempt <= max_attempts:
         print(f"🔄 Попытка {attempt} из {max_attempts}...")
 
+        # ВАЖНО: Даем редактору время "прийти в себя" после прошлой печати
+        page.wait_for_timeout(1000)
+
+        elements = page.locator('.container--kRiqW2gfRA0N2vRi').all()
+
+        description_text = ""
+        current_code = ""
+        error_report = ""
+
+        if len(elements) >= 3:
+            # 1. ОПИСАНИЕ ЗАДАЧИ
+            description_text = elements[0].inner_text().strip()
+
+            # 2. ТЕКУЩИЙ КОД (извлекаем по строкам из Monaco)
+            elements[1].scroll_into_view_if_needed()
+            line_locators = elements[1].locator('.view-line').all()
+
+            # Если строк нет сразу, подождем отрисовки
+            if not line_locators:
+                page.wait_for_timeout(1000)
+                line_locators = elements[1].locator('.view-line').all()
+
+            code_lines = [line.inner_text().replace('\u00a0', ' ') for line in line_locators]
+            current_code = "\n".join(code_lines)
+
+            # 3. РЕЗУЛЬТАТЫ ТЕСТОВ И ОШИБКИ
+            # Обычно это нижний блок, где написано "Ошибка в тесте 1..."
+            error_report = elements[2].inner_text().strip()
+
+        # Формируем итоговый task_text для промпта
+        task_text = f"ОПИСАНИЕ ЗАДАЧИ:\n{description_text}\n\n"
+        task_text += f"ТЕКУЩИЙ КОД В РЕДАКТОРЕ:\n{current_code}\n\n"
+        task_text += f"ОШИБКИ И ТЕСТЫ:\n{error_report}"
+
         # 2. Формируем промпт
+
         if attempt == 1:
-            prompt = f"Напиши код решения для задачи по {skill_name}.\nЗАДАЧА:\n{task_text}\nВЕРНИ ТОЛЬКО ЧИСТЫЙ КОД."
+            prompt = f"Напиши код решения для задачи по {skill_name}.{task_text}ВЕРНИ ТОЛЬКО ЧИСТЫЙ КОД."
         else:
-            prompt = f"Предыдущий код не прошел тесты. Исправь его.\nОШИБКИ ТЕСТОВ:\n{last_error}\nЗАДАЧА:\n{task_text}\nВЕРНИ ТОЛЬКО ИСПРАВЛЕННЫЙ ЧИСТЫЙ КОД."
+            prompt = f"Предыдущий код не прошел тесты. Исправь его. Не повторяй предыдущий код. {task_text}ВЕРНИ ТОЛЬКО ИСПРАВЛЕННЫЙ ЧИСТЫЙ КОД."
 
         # 3. Получаем ответ от ИИ
         solution_code = get_gemini_response_for_practice(prompt)
@@ -332,74 +371,214 @@ def solve_test_practice(page, skill_name):
             attempt += 1
             continue
 
-        # Очистка кода от маркдауна и мыслей (thought)
+        # 3.1 Очистка кода от маркдауна и мыслей (thought)
         if "<|thought|>" in solution_code:
             solution_code = solution_code.split("</|thought|>")[-1]
 
-        for lang in ["cpp", "python", "javascript", "php", "sql", "go", "java"]:
+        for lang in ["cpp", "python", "javascript", "php", "sql", "go", "java", "csharp"]:
             solution_code = solution_code.replace(f"```{lang}", "")
         solution_code = solution_code.replace("```", "").strip()
 
-        # 4. Вставка кода
-        print("⌨️ Вставляю код в редактор...")
-        try:
-            page.evaluate("(code) => { "
-                          "const editor = window.monaco.editor.getModels()[0]; "
-                          "if (editor) editor.setValue(code); "
-                          "}", solution_code)
-        except Exception as e:
-            print(f"⚠️ Ошибка Monaco API: {e}")
-            page.click('.monaco-editor')
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            page.keyboard.type(solution_code)
+        def safe_clean_comments(text, lang_name):
+            # Регулярка для строк в кавычках (чтобы их пропускать)
+            # Находит "...", '...', """...""", '''...'''
+            pattern = r'(\".*?\"|\'.*?\'|\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\')'
 
-        page.wait_for_timeout(1000)
+            def replace_func(match):
+                item = match.group(0)
+                # Если это строка в кавычках — возвращаем как есть
+                if item.startswith(('"', "'")):
+                    return item
+                return ""  # Если это был комментарий — удаляем
+
+            # Выбираем правила в зависимости от языка (lang_name)
+            if lang_name in ['python', 'sql']:
+                # Для Python/SQL удаляем только однострочные # или --
+                # Но только если они НЕ внутри кавычек
+                comment_pattern = r'(\".*?\"|\'.*?\'|\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\')|(#.*|--.*)'
+            else:
+                # Для C-style (Java, JS, C++, Go, PHP)
+                # Удаляем //... и /*...*/
+                comment_pattern = r'(\".*?\"|\'.*?\'|\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\')|(/\*[\s\S]*?\*/|//.*)'
+
+            return re.sub(comment_pattern, replace_func, text)
+
+        # Определяем текущий язык из контекста задачи (skill_name)
+        current_lang = skill_name.lower()
+
+        # Очищаем, сохраняя структуру строк
+        solution_code = safe_clean_comments(solution_code, current_lang)
+
+        # 3.2. Удаляем лишние пустые строки, которые остались после комментариев
+        lines = [line for line in solution_code.splitlines() if line.strip()]
+        solution_code = "\n".join(lines).strip()
+
+        print("✨ Код очищен (строки сохранены).")
+
+        #todo Проверить что это работает
+
+        # 4. Вставка кода (Посимвольная имитация печати)
+        print("⌨️ Фокусируюсь на редакторе...")
+
+        # Находим контейнер, который перехватывает клики (обычно это слой с текстом)
+        editor_overlay = page.locator('.monaco-editor [data-qa="editor-content"]').first
+
+        # Если такого нет, кликаем просто по самому блоку редактора
+        if not editor_overlay.is_visible():
+            editor_overlay = page.locator('.monaco-editor').first
+
+        # Кликаем по визуальному слою, чтобы перевести фокус
+        editor_overlay.click()
+
+        # Теперь, когда фокус в редакторе, находим скрытую textarea
+        # и используем force=True, чтобы Playwright не ругался на перекрытие
+        editor_input = page.locator('.monaco-editor textarea').first
+        editor_input.focus()
+
+        page.wait_for_timeout(500)
+
+        # Инициализируем контроллер клавиатуры
+        keyboard = Controller()
+
+        # 1. Фокусировка и подготовка
+        page.bring_to_front()
+        editor_overlay = page.locator('.monaco-editor').first
+        editor_overlay.click()
+        page.wait_for_timeout(500)
+
+        # 2. Очистка (Cmd+A на Маке) через pynput
+        print("🧹 Очищаю старый код...")
+        with keyboard.pressed(Key.cmd):
+            keyboard.press('a')
+            keyboard.release('a')
+
+        page.wait_for_timeout(200)
+        keyboard.press(Key.backspace)
+        keyboard.release(Key.backspace)
+        page.wait_for_timeout(300)
+
+        # 3. Подготовка текста
+        lines = solution_code.split('\n')
+        clean_solution_code = '\n'.join([line.lstrip() for line in lines])
+
+        # Настройки для "умного" обхода
+        brackets = {'(': ')', '[': ']', '{': '}'}
+        quotes = {'"': '"', "'": "'"}
+        skip_next_char = None
+
+        print(f"🚀 Запуск системной печати через pynput ({len(clean_solution_code)} симв.)...")
+
+        # Сбрасываем состояние модификаторов на всякий случай
+        for k in [Key.cmd, Key.shift, Key.alt, Key.ctrl]:
+            keyboard.release(k)
+
+        for char in clean_solution_code:
+            # --- ЛОГИКА ПЕРЕШАГИВАНИЯ ---
+            if char == skip_next_char:
+                keyboard.press(Key.right)
+                keyboard.release(Key.right)
+                skip_next_char = None
+                continue
+
+            # --- ПЕЧАТЬ СИМВОЛА ---
+            if char == '\n':
+                keyboard.press(Key.space)
+                keyboard.release(Key.space)
+                keyboard.press(Key.enter)
+                keyboard.release(Key.enter)
+                page.wait_for_timeout(random.randint(250, 450))
+            elif char == '\t':
+                keyboard.press(Key.space)
+                keyboard.release(Key.space)
+                keyboard.press(Key.tab)
+                keyboard.release(Key.tab)
+            elif char == ' ':
+                keyboard.press(Key.space)
+                keyboard.release(Key.space)
+            else:
+                # pynput.typewriter-style печать одного символа
+                keyboard.type(char)
+
+            # --- ЛОГИКА ПОСЛЕ ПЕЧАТИ (Автозаполнение Monaco) ---
+
+            # Запоминаем кавычку, чтобы перешагнуть авто-пару
+            if char in quotes:
+                skip_next_char = quotes[char]
+            else:
+                skip_next_char = None
+
+            # Удаляем авто-закрывающуюся скобку
+            if char in brackets:
+                page.wait_for_timeout(60)  # Даем Monaco время вставить пару
+                keyboard.press(Key.right)
+                keyboard.release(Key.right)
+                keyboard.press(Key.backspace)
+                keyboard.release(Key.backspace)
+
+            # Пауза между символами (стабильность для macOS)
+            page.wait_for_timeout(random.randint(25, 45))
+
+        print("✅ Системная печать завершена.")
 
         # 5. Запуск тестов
         print("🧪 Запускаю тесты...")
         page.locator('[data-qa="execute-code-button"]').click()
         page.wait_for_timeout(6000)
 
-        # 6. ПРОВЕРКА ПЕРВЫХ 3 ТЕСТ-КЕЙСОВ
+        # 6. ПРОВЕРКА РЕЗУЛЬТАТОВ (SQL + ОБЩИЙ СЛУЧАЙ)
         test_chips = page.locator('[data-qa="admin-test"]').all()
         all_tests_passed = True
         error_report = ""
 
-        if not test_chips:
-            # 1. Проверяем стандартный результат (как было)
-            res_locator = page.locator('[data-qa="test-case-actual-result"]').first
-            # 2. Проверяем специфическую ошибку синтаксиса SQL (из твоего HTML)
-            sql_error_locator = page.locator('[data-qa="sql-run-error"]').first
+        # ПРОВЕРКА ДЛЯ SQL (табличный вид)
+        sql_actual_locator = page.locator('[data-qa="sql-actual-result"]')
+        sql_expected_locator = page.locator('[data-qa="sql-expected-result"]')
+        sql_error_locator = page.locator('[data-qa="sql-run-error"]')
 
-            if sql_error_locator.is_visible():
+        if sql_error_locator.is_visible():
+            # Случай 1: Ошибка в самом SQL запросе (синтаксис)
+            all_tests_passed = False
+            error_report = f"SQL SYNTAX ERROR: {sql_error_locator.inner_text().strip()}"
+
+        elif sql_actual_locator.is_visible() and sql_expected_locator.is_visible():
+            # Случай 2: Запрос выполнился, но нужно сравнить таблицы
+            # Проверяем наличие плашки "Результат не сходится"
+            mismatch_indicator = page.locator('[data-qa="chip"]:has-text("Результат не сходится")')
+
+            if mismatch_indicator.is_visible():
                 all_tests_passed = False
-                # Извлекаем текст ошибки синтаксиса (например, ERROR: syntax error...)
-                error_report = f"SQL ERROR: {sql_error_locator.inner_text().strip()}"
-            elif res_locator.is_visible():
-                res_text = res_locator.inner_text()
-                if any(x in res_text.lower() for x in ["error", "exception", "trace", "expected", "не совпадает"]):
-                    all_tests_passed = False
-                    error_report = res_text
-        else:
-            # Проверяем первые 3 "чипса" (тест-кейса)
+                actual_data = sql_actual_locator.inner_text().strip()
+                expected_data = sql_expected_locator.inner_text().strip()
+                error_report = (
+                    f"SQL RESULT MISMATCH!\n"
+                    f"--- ВАШ РЕЗУЛЬТАТ ---\n{actual_data}\n"
+                    f"--- ОЖИДАЕМЫЙ РЕЗУЛЬТАТ ---\n{expected_data}\n"
+                    f"Внимательно проверь порядок строк (ORDER BY) и точность значений."
+                )
+
+        # ПРОВЕРКА ДЛЯ ОБЫЧНЫХ ЗАДАЧ (Python/JS/PHP и т.д.)
+        elif test_chips:
             chips_to_check = test_chips[:3]
             for index, chip in enumerate(chips_to_check):
                 chip.click()
                 page.wait_for_timeout(600)
 
-                # Синхронное получение текста
-                input_data = page.locator('[data-qa="test-case-input-data"]').inner_text().strip()
                 expected = page.locator('[data-qa="test-case-expected-data"]').inner_text().strip()
                 actual = page.locator('[data-qa="test-case-actual-result"]').inner_text().strip()
-
-                # Проверка иконки ошибки внутри чипса
                 has_error_icon = chip.locator('img[src*="error"]').count() > 0
 
                 if expected != actual or has_error_icon:
                     all_tests_passed = False
-                    error_report += f"\nОШИБКА В ТЕСТЕ {index + 1}:\nВходные: {input_data}\nОжидалось: {expected}\nПолучено: {actual}\n"
-                    break  # Выходим из цикла при первой ошибке
+                    error_report += f"\nОШИБКА В ТЕСТЕ {index + 1}:\nОжидалось: {expected}\nПолучено: {actual}\n"
+                    break
+
+        elif page.locator('[data-qa="test-case-actual-result"]').first.is_visible():
+            # Стандартная проверка одиночного результата
+            res_locator = page.locator('[data-qa="test-case-actual-result"]').first
+            res_text = res_locator.inner_text()
+            if any(x in res_text.lower() for x in ["error", "exception", "expected", "не совпадает"]):
+                all_tests_passed = False
+                error_report = res_text
 
         if all_tests_passed:
             print("✅ Все тесты пройдены!")
@@ -471,8 +650,9 @@ def test_hh_navigation():
         context = p.chromium.launch_persistent_context(
             user_data_dir,
             headless=False,
-            slow_mo=1000,
-            args=["--start-maximized"]
+            slow_mo=10,
+            args=["--start-maximized"],
+            permissions = ['clipboard-write']
         )
 
         page = context.new_page()
