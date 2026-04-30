@@ -1,13 +1,11 @@
 import os
 from playwright.sync_api import sync_playwright
-
-# Используем ОТДЕЛЬНУЮ папку для профиля автоматизации
-user_data_dir = os.path.expanduser("~/Documents/HH_Automation_Profile")
+import config
 
 def test_cookies():
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
-            user_data_dir,
+            config.USER_DATA_DIR,
             headless=False,
             slow_mo=500
         )

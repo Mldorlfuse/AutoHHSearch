@@ -4,88 +4,34 @@ import json
 import time
 import re
 import random
+import numpy as np
+import math
 from pynput.keyboard import Key, Controller
 from playwright.sync_api import sync_playwright
 
-class Skill:
-    API = "API"
-    ENGLISH = "Английский"
-    REGRESSION_TESTING = "Регрессионное тестирование"
-    DOCKER = "Docker"
-    GIT = "Git"
-    FUNCTIONAL_TESTING = "Функциональное тестирование"
-    HTML = "HTML"
-    CSS = "CSS"
-    JAVASCRIPT = "JavaScript"
-    AGILE = "Agile Project Management"
-    OOP = "ООП"
-    SCRUM = "Scrum"
-    PYTHON = "Python"
-    AUTOCAD = "AutoCAD"
-    CSHARP = "C#"
-    CPP = "C++"
-    GOLANG = "Golang"
-    HR_ANALYTICS = "HR-аналитика"
-    JAVA = "Java"
-    MS_EXCEL = "MS Excel"
-    OKR = "OKR"
-    PHP = "PHP"
-    ALGORITHMS = "Алгоритмы и структуры данных"
-    COPYWRITING = "Копирайтинг"
-    MATH_STATS = "Математическая статистика"
-    MACHINE_LEARNING = "Машинное обучение"
-    SQL = "SQL"
-    LINUX = "Linux"
-    POSTGRESQL = "PostgreSQL"
-
-class Mode:
-    THEORY = "Теория"
-    PRACTICE = "Практика"
-
-class Level:
-    BASIC = "Базовый"
-    INTERMEDIATE = "Средний"
-    ADVANCED = "Продвинутый"
-
-# Пример использования в конфиге:
-TASKS_TO_RUN = [
-    {
-        "name": Skill.SQL,
-        "mode": Mode.PRACTICE,
-        "level": Level.INTERMEDIATE
-    }
-]
-
+import config
 
 def get_gemini_response_for_questions(prompt):
-    # Твой новый ключ от ProxyAPI (начинается на PA-...)
-    api_key = "sk-Uzay8S0pApr49nG350VVRRRNbtsks7wu"
-
-    # URL для ProxyAPI.
-    # ВНИМАНИЕ: Убедись, что модель gemma-3-27b-it поддерживается прокси.
-    # Если будет ошибка 404, используй: gemini-2.5-flash
-    url = "https://api.proxyapi.ru/google/v1beta/models/gemini-2.5-flash-lite:generateContent"
+    """Получает ответ от ИИ для теоретических вопросов"""
+    settings = config.AI_THEORY_SETTINGS
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"  # Ключ переехал сюда
+        "Authorization": f"Bearer {settings['api_key']}"
     }
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.7,
-            "topP": 0.95
+            "temperature": settings['temperature'],
+            "topP": settings['top_p']
         }
     }
 
-    max_retries = 10
-    for attempt in range(max_retries):
+    for attempt in range(settings['max_retries']):
         try:
-            # Убрали ?key= из URL
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response = requests.post(settings['url'], headers=headers, json=payload, timeout=60)
 
-            # Стандартная обработка перегрузки
             if response.status_code in [429, 503]:
                 time.sleep(10)
                 continue
@@ -93,45 +39,36 @@ def get_gemini_response_for_questions(prompt):
             response.raise_for_status()
             data = response.json()
 
-            # Структура ответа остается такой же, как у оригинального Google API
             return data["candidates"][0]["content"]["parts"][0]["text"]
 
         except Exception as e:
             print(f"Ошибка API (попытка {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
+            if attempt < settings['max_retries'] - 1:
                 time.sleep(5)
 
     return None
 
 def get_gemini_response_for_practice(prompt):
-    # Твой ключ от ProxyAPI (замени на реальный)
-    api_key = "sk-Uzay8S0pApr49nG350VVRRRNbtsks7wu"
-
-    # Меняем URL на прокси-сервер
-    # ВАЖНО: Убедись, что модель gemma-3-27b-it активна в ProxyAPI.
-    # Если будет ошибка 404, попробуй gemini-2.5-flash
-    url = "https://api.proxyapi.ru/google/v1beta/models/gemini-2.5-flash:generateContent"
+    """Получает ответ от ИИ для практических задач (код)"""
+    settings = config.AI_PRACTICE_SETTINGS
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
+        "Authorization": f"Bearer {settings['api_key']}"
     }
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.7,
-            "topP": 0.95
+            "temperature": settings['temperature'],
+            "topP": settings['top_p']
         }
     }
 
-    max_retries = 10
-    for attempt in range(max_retries):
+    for attempt in range(settings['max_retries']):
         try:
-            # Выполняем запрос без ?key= в URL
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response = requests.post(settings['url'], headers=headers, json=payload, timeout=60)
 
-            # Обработка лимитов и временных сбоев
             if response.status_code in [429, 503]:
                 time.sleep(10)
                 continue
@@ -139,20 +76,17 @@ def get_gemini_response_for_practice(prompt):
             response.raise_for_status()
             data = response.json()
 
-            # Структура ответа у ProxyAPI полностью совпадает с оригиналом Google
             return data["candidates"][0]["content"]["parts"][0]["text"]
 
         except Exception as e:
             print(f"Ошибка API (попытка {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
+            if attempt < settings['max_retries'] - 1:
                 time.sleep(5)
 
     return None
 
 def hh_test_setup(page, task):
-    """
-    Выполняет настройку и запуск теста внутри карточки навыка.
-    """
+    """Выполняет настройку и запуск теста внутри карточки навыка."""
     print(f"⚙️ Настройка теста: {task['name']} | {task['level']} | {task['mode']}")
 
     # 1. Выбор уровня сложности
@@ -166,12 +100,10 @@ def hh_test_setup(page, task):
         return False
 
     # 2. Выбор режима (Теория или Практика)
-    mode_qa_part = "theory" if task['mode'] == Mode.THEORY else "practice"
-    # Ищем именно карточку, которая содержит этот input
+    mode_qa_part = "theory" if task['mode'] == config.Mode.THEORY else "practice"
     mode_card = page.locator(f"label:has(input[data-qa='applicant-keyskills-verification-methods-kind-card-{mode_qa_part}'])")
 
     if mode_card.is_visible():
-        # Используем force=True, так как Magritte часто перекрывает элементы
         mode_card.click(force=True)
         page.wait_for_timeout(500)
     else:
@@ -179,10 +111,7 @@ def hh_test_setup(page, task):
         return False
 
     # 3. Нажатие на кнопку "Начать тест"
-    # Используем точный data-qa для кнопки "Начать тест"
     start_button = page.locator(f"[data-qa='applicant-keyskills-verification-methods-start-{mode_qa_part}']")
-
-    # Если кнопка не найдена по специфичному ID, ищем просто по тексту
     if not start_button.is_visible():
         start_button = page.get_by_role("button", name="Начать тест")
 
@@ -202,17 +131,13 @@ def solve_test_theory(page, skill_name):
 
     print("🧠 Анализирую вопрос...")
 
-    # 1. Проверка завершения теста
-    finish_button = page.locator('[data-qa="footer-finish-button"]')
-    if finish_button.is_visible():
-        print("🏁 Вижу кнопку завершения теста.")
-        if finish_button.is_enabled():
-            finish_button.click()
-            return "FINISH"
+    # 1. Проверка завершения теста — НО СНАЧАЛА ОТВЕЧАЕМ НА ВОПРОС!
+    # Убираем преждевременную проверку finish_button
 
     # 2. Извлекаем HTML вопроса
     question_locator = page.locator('[data-qa="text-description"]')
     if not question_locator.is_visible(timeout=5000):
+        # Может быть страница результатов
         if page.get_by_text("Посмотреть результаты").is_visible():
             return "FINISH"
         print("❌ Вопрос не найден")
@@ -221,15 +146,22 @@ def solve_test_theory(page, skill_name):
     # Используем inner_html() для контента вопроса
     question_content_html = question_locator.inner_html().strip()
 
-    # 3. Извлекаем варианты ответов (как объекты и как HTML для ИИ)
+    # 3. Извлекаем варианты ответов
     options_locators = page.locator('label.magritte-card___kxw8G_4-1-24').all()
 
-    # Собираем только HTML-содержимое каждого варианта
-    options_html_list = [opt.inner_html().strip() for opt in options_locators]
+    # Если вариантов нет — проверяем, может тест завершён
+    if not options_locators:
+        if page.get_by_text("Посмотреть результаты").is_visible():
+            return "FINISH"
+        # Пробуем другие селекторы для вариантов
+        options_locators = page.locator('[data-qa="test-answer-option"]').all()
 
-    if not options_html_list:
+    if not options_locators:
         print("❌ Варианты ответов не найдены")
         return False
+
+    # Собираем HTML-содержимое каждого варианта
+    options_html_list = [opt.inner_html().strip() for opt in options_locators]
 
     # 4. Запрос к ИИ с передачей HTML
     prompt = f"""
@@ -247,60 +179,500 @@ def solve_test_theory(page, skill_name):
         2. Верни СТРОГО текст выбранного варианта (как он виден пользователю).
         3. Если твой ответ не совпадает идеально — выбери наиболее подходящий.
 
-        ВЕРНИ СТРОГО JSON:
+        ВЕРНИ СТРОГО JSON (без маркдауна, без пояснений):
         {{
           "correct_option_text": "текст выбранного ответа"
         }}
+        Верни только json, без комментариев и рассуждений
         """
 
     raw_response = get_gemini_response_for_questions(prompt)
 
-    # 1. Защита от пустых ответов при сбое API
+    # Защита от пустых ответов
     if not raw_response or not isinstance(raw_response, str):
-        print(f"📡 API вернуло некорректный ответ (Error 500). Жму наугад.")
-        options_locators[0].click()
-        return "CONTINUE"
+        print(f"📡 API вернуло некорректный ответ. Жму наугад.")
+        random.choice(options_locators).click()
+        return click_next_button(page)
 
     ai_choice = None
     try:
-        # 2. Улучшенный поиск JSON (ищет содержимое между { и })
-        # Это спасет, если ИИ прислал "Вот ваш ответ: { ... }"
-        match = re.search(r'\{.*\}', raw_response, re.DOTALL)
+        # Поиск JSON
+        match = re.search(r'\{[^{}]*\}', raw_response, re.DOTALL)
         if match:
-            json_str = match.group(0)
-            data = json.loads(json_str)
-            ai_choice = data.get("correct_option_text")
-        else:
-            # Если JSON вообще нет, пробуем считать весь текст как ответ (план Б)
+            json_str = match.group(0).strip()
+            if "'" in json_str and '"' not in json_str:
+                json_str = json_str.replace("'", '"')
+            try:
+                data = json.loads(json_str)
+                ai_choice = data.get("correct_option_text")
+            except json.JSONDecodeError:
+                pass
+
+        # Поиск по ключу напрямую
+        if not ai_choice:
+            key_match = re.search(r'"correct_option_text"\s*:\s*"([^"]*)"', raw_response)
+            if key_match:
+                ai_choice = key_match.group(1)
+
+        # Используем весь ответ как последний шанс
+        if not ai_choice:
             ai_choice = raw_response.strip()
+            if ai_choice.startswith('"') and ai_choice.endswith('"'):
+                ai_choice = ai_choice[1:-1]
 
     except Exception as e:
         print(f"❌ Ошибка парсинга: {e}")
 
-    # 5. Кликаем по варианту (сопоставляем по чистому тексту)
+    # Финальная проверка
+    if not ai_choice:
+        print("⚠️ Не удалось извлечь ответ. Жму наугад.")
+        random.choice(options_locators).click()
+        return click_next_button(page)
+
+    # 5. Кликаем по варианту
     found = False
+    ai_choice_lower = ai_choice.lower().strip()
+
     for opt_locator in options_locators:
-        # inner_text() уберет все теги и оставит чистую строку для сравнения
-        if ai_choice.lower() in opt_locator.inner_text().lower():
-            print(f"✅ ИИ выбрал: {opt_locator.inner_text().strip()}")
+        opt_text = opt_locator.inner_text().strip()
+        opt_text_lower = opt_text.lower()
+
+        if ai_choice_lower in opt_text_lower or opt_text_lower in ai_choice_lower:
+            print(f"✅ ИИ выбрал: {opt_text}")
             opt_locator.click()
             found = True
             break
 
     if not found:
-        print("⚠️ Сопоставление не удалось, жму первый вариант")
+        print(f"⚠️ Сопоставление не удалось. Искали: '{ai_choice}'. Доступные варианты:")
+        for i, opt in enumerate(options_locators):
+            print(f"  {i + 1}. {opt.inner_text().strip()[:80]}")
+        print("⚠️ Жму первый вариант")
         options_locators[0].click()
 
-    # 6. Переход к следующему вопросу
+    # 6. Переход к следующему вопросу (или завершение)
+    return click_next_button(page)
+
+def click_next_button(page):
+    """
+    Нажимает кнопку "Далее" или "Завершить".
+    Возвращает "FINISH" если тест завершён, "CONTINUE" если идём дальше.
+    """
     page.wait_for_timeout(500)
+
+    # Проверяем кнопку "Далее"
     next_button = page.locator('[data-qa="footer-next-button"]')
 
     if next_button.is_visible() and next_button.is_enabled():
-        btn_text = next_button.inner_text().lower()
+        btn_text = next_button.inner_text().lower().strip()
+        print(f"➡️ Нажимаю кнопку: '{btn_text}'")
         next_button.click()
-        return "FINISH" if "завершить" in btn_text else "CONTINUE"
+        page.wait_for_timeout(1000)
 
+        # После клика проверяем, не появилась ли страница результатов
+        if "завершить" in btn_text or "finish" in btn_text:
+            page.wait_for_timeout(2000)
+            if "applicant/contest_result" in page.url or page.get_by_text("Посмотреть результаты").is_visible():
+                return "FINISH"
+
+        return "CONTINUE"
+
+    # Если кнопки нет — проверяем, может тест уже завершён
+    if page.get_by_text("Посмотреть результаты").is_visible():
+        return "FINISH"
+
+    # Может быть модальное окно с результатом
+    modal_finish = page.locator('[data-qa="modal-finish-btn"]')
+    if modal_finish.is_visible():
+        modal_finish.click()
+        page.wait_for_timeout(2000)
+        return "FINISH"
+
+    print("⚠️ Кнопка перехода не найдена")
     return False
+
+class BiometricTypist:
+    """
+    Эмуляция человеческой печати с Keystroke Dynamics.
+    Учитывает анатомию пальцев, усталость, джиттер и контекстные паузы.
+    """
+
+    def __init__(self):
+        # Профили пальцев (dwell time в мс)
+        self.dwell_times = {
+            'pinky': {'base': 120, 'sigma': 25,
+                      'keys': ['q', 'a', 'z', 'p', ';', '/', '1', '0', '\t', '\n', Key.tab, Key.enter, Key.backspace]},
+            'ring': {'base': 110, 'sigma': 20, 'keys': ['w', 's', 'x', 'o', 'l', '.', '2', '9']},
+            'middle': {'base': 95, 'sigma': 18, 'keys': ['e', 'd', 'c', 'i', 'k', ',', '3', '8']},
+            'index': {'base': 85, 'sigma': 15,
+                      'keys': ['r', 'f', 'v', 't', 'g', 'b', 'y', 'h', 'n', 'u', 'j', 'm', '4', '5', '6', '7']},
+            'thumb': {'base': 100, 'sigma': 20, 'keys': [' ', Key.space]}
+        }
+
+        self.flight_time_cache = {}
+        self.fatigue = 0.0
+        self.char_count = 0
+        self.key_history = []
+        self.typo_count = 0  # счетчик опечаток для реалистичности
+
+    def get_finger(self, char_or_key):
+        """Определяем палец для символа или клавиши"""
+        if isinstance(char_or_key, Key):
+            # Для специальных клавиш
+            if char_or_key in (Key.enter, Key.backspace):
+                return 'pinky'
+            elif char_or_key == Key.space:
+                return 'thumb'
+            elif char_or_key == Key.tab:
+                return 'pinky'
+            return 'index'
+
+        char = str(char_or_key).lower()
+        for finger_name, finger_data in self.dwell_times.items():
+            if char in finger_data['keys']:
+                return finger_name
+        return 'index'
+
+    def gaussian_dwell(self, finger, char_or_key):
+        """Реалистичное время удержания клавиши с эффектом усталости"""
+        base = self.dwell_times[finger]['base']
+        sigma = self.dwell_times[finger]['sigma']
+
+        # Усталость увеличивает dwell time на 0-30%
+        fatigue_factor = 1 + (self.fatigue * 0.3)
+
+        # Логнормальное распределение (более реалистично, чем нормальное)
+        mu = math.log(max(1, base * fatigue_factor))
+        sigma_log = sigma / max(1, base)
+
+        dwell = np.random.lognormal(mu, sigma_log) / 1000.0  # в секунды
+        return max(0.02, min(dwell, 0.3))
+
+    def get_flight_time(self, from_char, to_char, context=""):
+        """Реалистичное время перехода между клавишами"""
+        cache_key = f"{from_char}_{to_char}"
+        if cache_key in self.flight_time_cache:
+            return self.flight_time_cache[cache_key] * random.uniform(0.92, 1.08)
+
+        base_flight = 0.06  # 60ms базовая задержка
+
+        from_finger = self.get_finger(from_char)
+        to_finger = self.get_finger(to_char)
+
+        # Тот же палец — медленнее
+        if from_finger == to_finger:
+            base_flight *= 2.2
+        # Соседние пальцы — быстрее
+        elif (from_finger == 'index' and to_finger == 'middle') or \
+                (from_finger == 'middle' and to_finger == 'index') or \
+                (from_finger == 'middle' and to_finger == 'ring') or \
+                (from_finger == 'ring' and to_finger == 'middle'):
+            base_flight *= 0.75
+
+        # Частые биграммы печатаются быстрее
+        common_bigrams = ['th', 'he', 'in', 'er', 'an', 're', 'nd', 'at', 'on', 'nt', 'ha', 'es', 'st', 'en', 'ed',
+                          'or', 'to', 'it', 'is', 'ng']
+        bigram = f"{str(from_char).lower()}{str(to_char).lower()}"
+        if bigram in common_bigrams:
+            base_flight *= 0.55
+
+        # Джиттер
+        jitter = random.gauss(0, 0.012)
+
+        flight_time = max(0.015, base_flight + jitter)
+        self.flight_time_cache[cache_key] = flight_time
+
+        return flight_time
+
+    def update_fatigue(self, char_or_key):
+        """Обновляем уровень усталости"""
+        self.char_count += 1
+        self.key_history.append(str(char_or_key))
+
+        if len(self.key_history) > 60:
+            self.key_history.pop(0)
+
+        # Нелинейный рост усталости
+        self.fatigue = min(1.0, (self.char_count ** 0.65) / 180)
+
+        # Микропаузы снижают усталость
+        if random.random() < 0.04:
+            self.fatigue *= 0.75
+
+    def need_micropause(self, char):
+        """Определяем необходимость паузы на обдумывание"""
+        # Пауза каждые 40-80 символов
+        if self.char_count > 0 and self.char_count % random.randint(40, 80) == 0:
+            return random.uniform(0.8, 3.5)
+
+        # После исправления ошибки
+        if len(self.key_history) >= 3:
+            last_three = ''.join(self.key_history[-3:])
+            if 'Key.backspace' in last_three:
+                return random.uniform(0.4, 1.8)
+
+        # Перед сложными конструкциями (скобки, кавычки)
+        if char in '([{"""':
+            if random.random() < 0.3:
+                return random.uniform(0.2, 0.8)
+
+        return 0
+
+    def human_typo(self, char):
+        """Генерируем реалистичную опечатку (3% шанс)"""
+        if random.random() > 0.03:
+            return None
+
+        adjacent_keys = {
+            'a': 's', 's': 'a', 'd': 'f', 'f': 'd', 'g': 'h', 'h': 'g',
+            'j': 'k', 'k': 'j', 'l': ';', ';': 'l',
+            'q': 'w', 'w': 'q', 'e': 'r', 'r': 'e', 't': 'y', 'y': 't',
+            'u': 'i', 'i': 'u', 'o': 'p', 'p': 'o',
+            'z': 'x', 'x': 'z', 'c': 'v', 'v': 'c', 'b': 'n', 'n': 'b',
+            '1': '2', '2': '1', '3': '4', '4': '3',
+        }
+
+        typo_type = random.choice(['adjacent', 'double', 'skip'])
+
+        if typo_type == 'adjacent' and char.lower() in adjacent_keys:
+            wrong_char = adjacent_keys[char.lower()]
+            return wrong_char.upper() if char.isupper() else wrong_char
+        elif typo_type == 'double':
+            return char + char
+        elif typo_type == 'skip':
+            return '\x00'  # маркер пропуска
+
+        return None
+
+    def human_keystroke(self, keyboard, char):
+        """
+        Одно полностью реалистичное нажатие клавиши
+        с биометрической динамикой и возможными ошибками
+        """
+        # Микропауза перед сложным действием
+        micropause = self.need_micropause(char)
+        if micropause > 0:
+            time.sleep(micropause)
+
+        # Обработка опечатки
+        typo = self.human_typo(char)
+        if typo and typo != '\x00':
+            # Печатаем неправильный символ
+            wrong_finger = self.get_finger(typo)
+            wrong_dwell = self.gaussian_dwell(wrong_finger, typo)
+
+            if len(typo) == 2:  # double typo
+                keyboard.press(typo[0])
+                time.sleep(wrong_dwell)
+                keyboard.release(typo[0])
+                time.sleep(random.uniform(0.03, 0.08))
+                keyboard.press(typo[1])
+                time.sleep(wrong_dwell)
+                keyboard.release(typo[1])
+            else:
+                keyboard.press(typo)
+                time.sleep(wrong_dwell)
+                keyboard.release(typo)
+
+            # Время на осознание ошибки
+            time.sleep(random.uniform(0.18, 0.5))
+
+            # Исправление - backspace
+            for _ in range(len(typo)):
+                keyboard.press(Key.backspace)
+                time.sleep(self.gaussian_dwell('pinky', Key.backspace))
+                keyboard.release(Key.backspace)
+                time.sleep(random.uniform(0.05, 0.12))
+
+            self.typo_count += 1
+            time.sleep(random.uniform(0.1, 0.35))
+
+        # Правильное нажатие
+        finger = self.get_finger(char)
+        dwell_time = self.gaussian_dwell(finger, char)
+
+        if char == '\n':
+            keyboard.press(Key.space)
+            keyboard.press(Key.enter)
+            time.sleep(dwell_time)
+            keyboard.release(Key.space)
+            keyboard.release(Key.enter)
+        elif char == '\t':
+            keyboard.press(Key.tab)
+            time.sleep(dwell_time)
+            keyboard.release(Key.tab)
+        elif char == ' ':
+            keyboard.press(Key.space)
+            time.sleep(dwell_time)
+            keyboard.release(Key.space)
+        else:
+            keyboard.press(char)
+            time.sleep(dwell_time)
+            keyboard.release(char)
+
+        self.update_fatigue(char)
+        return dwell_time
+
+def enhance_isTrusted_compatibility(page):
+    """
+    Дополнительные трюки для обхода проверки isTrusted
+    """
+    # 1. Создаем "реалистичный" фокус через нативные события
+    page.evaluate("""
+        const editor = document.querySelector('.monaco-editor');
+        if (editor) {
+            const rect = editor.getBoundingClientRect();
+            const events = ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click'];
+            events.forEach(eventType => {
+                const event = new MouseEvent(eventType, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: rect.left + Math.random() * rect.width,
+                    clientY: rect.top + Math.random() * rect.height,
+                    button: 0
+                });
+                editor.dispatchEvent(event);
+            });
+
+            // Дополнительно: триггерим фокус на textarea внутри Monaco
+            const textarea = editor.querySelector('textarea');
+            if (textarea) {
+                textarea.focus();
+                // Эмулируем реальное событие фокуса
+                const focusEvent = new FocusEvent('focus', {
+                    bubbles: true,
+                    cancelable: true,
+                    relatedTarget: document.body
+                });
+                textarea.dispatchEvent(focusEvent);
+            }
+        }
+    """)
+
+    # 2. Физические клики мыши по редактору со случайным смещением
+    editor_rect = page.locator('.monaco-editor').bounding_box()
+    if editor_rect:
+        for _ in range(random.randint(1, 3)):
+            x = editor_rect['x'] + random.randint(50, int(editor_rect['width'] - 50))
+            y = editor_rect['y'] + random.randint(20, int(editor_rect['height'] - 20))
+            page.mouse.click(x, y)
+            time.sleep(random.uniform(0.1, 0.3))
+
+        # Иногда делаем "двойной клик" для выделения слова (как человек)
+        if random.random() < 0.3:
+            x = editor_rect['x'] + random.randint(100, int(editor_rect['width'] - 100))
+            y = editor_rect['y'] + random.randint(30, int(editor_rect['height'] - 30))
+            page.mouse.dblclick(x, y)
+            time.sleep(random.uniform(0.2, 0.4))
+            # Кликаем еще раз чтобы снять выделение
+            page.mouse.click(
+                editor_rect['x'] + random.randint(10, 50),
+                editor_rect['y'] + random.randint(5, 15)
+            )
+            time.sleep(random.uniform(0.1, 0.2))
+
+def human_type_code(page, solution_code, brackets=None, quotes=None):
+    """
+    Печать кода с полной эмуляцией человеческого поведения,
+    включая обход автозакрытия Monaco Editor и проверки isTrusted.
+    """
+    if brackets is None:
+        brackets = {'(': ')', '[': ']', '{': '}'}
+    if quotes is None:
+        quotes = {'"': '"', "'": "'"}
+
+    biometric = BiometricTypist()
+    keyboard = Controller()
+
+    # Сбрасываем все модификаторы
+    for k in [Key.cmd, Key.shift, Key.alt, Key.ctrl]:
+        keyboard.release(k)
+
+    print(f"🧑‍💻 Начинаю человеческий ввод ({len(solution_code)} симв.)...")
+
+    # ===== ВАЖНО: Эмуляция человеческого фокуса перед вводом =====
+    enhance_isTrusted_compatibility(page)
+    time.sleep(random.uniform(0.3, 0.6))
+
+    # Дополнительно: "человеческий" клик по редактору
+    editor_overlay = page.locator('.monaco-editor').first
+    box = editor_overlay.bounding_box()
+    if box:
+        # Первый клик — "промах" мимо центра
+        click_x = box['x'] + box['width'] * random.uniform(0.2, 0.45)
+        click_y = box['y'] + box['height'] * random.uniform(0.4, 0.6)
+        page.mouse.click(click_x, click_y)
+        time.sleep(random.uniform(0.15, 0.3))
+
+        # Второй клик — уже ближе к нужному месту
+        click_x = box['x'] + box['width'] * random.uniform(0.35, 0.65)
+        click_y = box['y'] + box['height'] * random.uniform(0.3, 0.55)
+        page.mouse.click(click_x, click_y)
+        time.sleep(random.uniform(0.2, 0.4))
+
+    skip_next_char = None
+    prev_char = None
+
+    for idx, char in enumerate(solution_code):
+        # --- ОБХОД АВТОЗАКРЫТИЯ: перешагиваем авто-пару ---
+        if char == skip_next_char:
+            time.sleep(biometric.get_flight_time(prev_char or ' ', Key.right))
+            keyboard.press(Key.right)
+            time.sleep(biometric.gaussian_dwell('pinky', Key.right))
+            keyboard.release(Key.right)
+            skip_next_char = None
+            prev_char = Key.right
+            biometric.update_fatigue(Key.right)
+            continue
+
+        # --- Flight time перед символом ---
+        if prev_char is not None:
+            flight = biometric.get_flight_time(prev_char, char)
+            time.sleep(flight)
+
+        # --- ПЕЧАТЬ СИМВОЛА С БИОМЕТРИЕЙ ---
+        biometric.human_keystroke(keyboard, char)
+        prev_char = char
+
+        # --- ЛОГИКА ПОСЛЕ ПЕЧАТИ (Monaco автозаполнение) ---
+
+        # Запоминаем кавычку для перешагивания
+        if char in quotes:
+            skip_next_char = quotes[char]
+        else:
+            skip_next_char = None
+
+        # Удаляем авто-закрывающуюся скобку
+        if char in brackets:
+            time.sleep(random.uniform(0.04, 0.08))
+
+            keyboard.press(Key.right)
+            time.sleep(biometric.gaussian_dwell('pinky', Key.right))
+            keyboard.release(Key.right)
+
+            time.sleep(random.uniform(0.03, 0.06))
+
+            keyboard.press(Key.backspace)
+            time.sleep(biometric.gaussian_dwell('pinky', Key.backspace))
+            keyboard.release(Key.backspace)
+
+            prev_char = Key.backspace
+            biometric.update_fatigue(Key.backspace)
+
+        # Микро-пауза между символами
+        time.sleep(random.uniform(0.02, 0.06))
+
+        # Периодически обновляем isTrusted через микродвижения мыши
+        if idx % random.randint(30, 60) == 0:
+            current_box = editor_overlay.bounding_box()
+            if current_box:
+                # Легкое движение мыши (как будто следим за курсором)
+                mx = current_box['x'] + current_box['width'] * random.uniform(0.3, 0.7)
+                my = current_box['y'] + current_box['height'] * random.uniform(0.1, 0.3)
+                page.mouse.move(mx, my)
+                time.sleep(random.uniform(0.05, 0.15))
+
+    print(f"✅ Человеческий ввод завершен. Опечаток исправлено: {biometric.typo_count}")
 
 def solve_test_practice(page, skill_name):
     print(f"🛠 Работаю над практической задачей по {skill_name}...")
@@ -311,11 +683,10 @@ def solve_test_practice(page, skill_name):
     attempt = 1
     last_error = ""
 
-    # 1. Сбор описания задачи (ждем появления контейнера)
+    # 1. Сбор описания задачи
     try:
         page.wait_for_selector('.container--kRiqW2gfRA0N2vRi', timeout=15000)
     except:
-        # Если контейнера нет, возможно мы уже на странице результатов
         if "applicant/contest_result" in page.url:
             return "FINISH"
         return "ERROR"
@@ -323,7 +694,6 @@ def solve_test_practice(page, skill_name):
     while attempt <= max_attempts:
         print(f"🔄 Попытка {attempt} из {max_attempts}...")
 
-        # ВАЖНО: Даем редактору время "прийти в себя" после прошлой печати
         page.wait_for_timeout(1000)
 
         elements = page.locator('.container--kRiqW2gfRA0N2vRi').all()
@@ -333,14 +703,11 @@ def solve_test_practice(page, skill_name):
         error_report = ""
 
         if len(elements) >= 3:
-            # 1. ОПИСАНИЕ ЗАДАЧИ
             description_text = elements[0].inner_text().strip()
 
-            # 2. ТЕКУЩИЙ КОД (извлекаем по строкам из Monaco)
             elements[1].scroll_into_view_if_needed()
             line_locators = elements[1].locator('.view-line').all()
 
-            # Если строк нет сразу, подождем отрисовки
             if not line_locators:
                 page.wait_for_timeout(1000)
                 line_locators = elements[1].locator('.view-line').all()
@@ -348,19 +715,15 @@ def solve_test_practice(page, skill_name):
             code_lines = [line.inner_text().replace('\u00a0', ' ') for line in line_locators]
             current_code = "\n".join(code_lines)
 
-            # 3. РЕЗУЛЬТАТЫ ТЕСТОВ И ОШИБКИ
-            # Обычно это нижний блок, где написано "Ошибка в тесте 1..."
             error_report = elements[2].inner_text().strip()
 
-        # Формируем итоговый task_text для промпта
         task_text = f"ОПИСАНИЕ ЗАДАЧИ:\n{description_text}\n\n"
         task_text += f"ТЕКУЩИЙ КОД В РЕДАКТОРЕ:\n{current_code}\n\n"
         task_text += f"ОШИБКИ И ТЕСТЫ:\n{error_report}"
 
         # 2. Формируем промпт
-
         if attempt == 1:
-            prompt = f"Напиши код решения для задачи по {skill_name}.{task_text}ВЕРНИ ТОЛЬКО ЧИСТЫЙ КОД."
+            prompt = f"Напиши код решения для задачи по {skill_name}.{task_text}ВЕРНИ ТОЛЬКО ЧИСТЫЙ КОД. Обязательно используй начальную структуру"
         else:
             prompt = f"Предыдущий код не прошел тесты. Исправь его. Не повторяй предыдущий код. {task_text}ВЕРНИ ТОЛЬКО ИСПРАВЛЕННЫЙ ЧИСТЫЙ КОД."
 
@@ -371,180 +734,202 @@ def solve_test_practice(page, skill_name):
             attempt += 1
             continue
 
-        # 3.1 Очистка кода от маркдауна и мыслей (thought)
+        # 3.1 Очистка кода от маркдауна и мыслей
         if "<|thought|>" in solution_code:
             solution_code = solution_code.split("</|thought|>")[-1]
 
-        for lang in ["cpp", "python", "javascript", "php", "sql", "go", "java", "csharp"]:
+        for lang in ["cpp", "python", "javascript", "php", "sql", "go", "java", "csharp", "typescript", "kotlin",
+                     "swift", "rust", "ruby"]:
             solution_code = solution_code.replace(f"```{lang}", "")
         solution_code = solution_code.replace("```", "").strip()
 
+        # Функция для безопасного удаления комментариев
         def safe_clean_comments(text, lang_name):
-            # Регулярка для строк в кавычках (чтобы их пропускать)
-            # Находит "...", '...', """...""", '''...'''
-            pattern = r'(\".*?\"|\'.*?\'|\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\')'
+            """
+            Удаляет комментарии из кода, сохраняя строки в кавычках.
+            Поддерживает все популярные языки программирования.
+            """
+            # Паттерн для строк в кавычках (их не трогаем)
+            string_pattern = r'''
+                    (?:
+                        "(?:[^"\\]|\\.)*"           # Двойные кавычки
+                        |'(?:[^'\\]|\\.)*'           # Одинарные кавычки
+                        |`(?:[^`\\]|\\.)*`           # Бэктики (шаблонные строки)
+                        |\"\"\"[\s\S]*?\"\"\"        # Тройные двойные кавычки (Python)
+                        |\'\'\'[\s\S]*?\'\'\'        # Тройные одинарные кавычки (Python)
+                    )
+                '''
 
             def replace_func(match):
                 item = match.group(0)
                 # Если это строка в кавычках — возвращаем как есть
-                if item.startswith(('"', "'")):
+                if item and (item[0] in ('"', "'", '`')):
                     return item
-                return ""  # Если это был комментарий — удаляем
+                return ""  # комментарий удаляем
 
-            # Выбираем правила в зависимости от языка (lang_name)
-            if lang_name in ['python', 'sql']:
-                # Для Python/SQL удаляем только однострочные # или --
-                # Но только если они НЕ внутри кавычек
-                comment_pattern = r'(\".*?\"|\'.*?\'|\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\')|(#.*|--.*)'
-            else:
-                # Для C-style (Java, JS, C++, Go, PHP)
-                # Удаляем //... и /*...*/
-                comment_pattern = r'(\".*?\"|\'.*?\'|\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\')|(/\*[\s\S]*?\*/|//.*)'
+            # Определяем паттерны комментариев в зависимости от языка
+            lang_lower = lang_name.lower()
 
-            return re.sub(comment_pattern, replace_func, text)
+            # Комментарии для разных языков
+            single_line_comments = []
+            multi_line_comments = []
 
-        # Определяем текущий язык из контекста задачи (skill_name)
+            # Python, Ruby, Shell, YAML, Perl
+            if lang_lower in ['python', 'ruby', 'shell', 'bash', 'yaml', 'perl', 'r']:
+                single_line_comments.append(r'#.*')
+            # SQL, Lua, Haskell, Ada
+            elif lang_lower in ['sql', 'postgresql', 'mysql', 'lua', 'haskell', 'ada']:
+                single_line_comments.append(r'--.*')
+            # MATLAB, Octave
+            elif lang_lower in ['matlab', 'octave']:
+                single_line_comments.append(r'%.*')
+            # C-style языки (Java, C++, C#, JavaScript, Go, Rust, Swift, Kotlin, PHP, TypeScript, Dart, Scala)
+            elif lang_lower in ['java', 'c++', 'cpp', 'c#', 'csharp', 'javascript', 'js', 'go', 'golang',
+                                'rust', 'swift', 'kotlin', 'php', 'typescript', 'dart', 'scala', 'c',
+                                'objective-c', 'objc', 'groovy', 'solidity']:
+                single_line_comments.append(r'//.*')
+                multi_line_comments.append(r'/\*[\s\S]*?\*/')
+
+            # По умолчанию пробуем все паттерны (для неизвестных языков)
+            if not single_line_comments and not multi_line_comments:
+                single_line_comments = [r'#.*', r'--.*', r'//.*']
+                multi_line_comments = [r'/\*[\s\S]*?\*/']
+
+            # Собираем все паттерны комментариев
+            all_comment_patterns = []
+            if single_line_comments:
+                all_comment_patterns.append('|'.join(f'({p})' for p in single_line_comments))
+            if multi_line_comments:
+                all_comment_patterns.append('|'.join(f'({p})' for p in multi_line_comments))
+
+            if not all_comment_patterns:
+                return text  # нет паттернов — возвращаем как есть
+
+            comment_pattern = '|'.join(all_comment_patterns)
+
+            # Итоговый паттерн: строки + комментарии
+            # Используем verbose mode для читаемости
+            full_pattern = f'(?:{string_pattern})|(?:{comment_pattern})'
+
+            try:
+                # Компилируем с флагами VERBOSE и DOTALL
+                compiled_pattern = re.compile(full_pattern, re.VERBOSE | re.DOTALL)
+
+                # Обрабатываем построчно, чтобы сохранить структуру отступов
+                lines = text.split('\n')
+                cleaned_lines = []
+
+                for line in lines:
+                    # Удаляем комментарии в строке
+                    cleaned_line = compiled_pattern.sub(replace_func, line)
+                    # Убираем trailing пробелы после удаления комментариев
+                    cleaned_line = cleaned_line.rstrip()
+                    cleaned_lines.append(cleaned_line)
+
+                result = '\n'.join(cleaned_lines)
+
+                # Удаляем пустые строки в начале и конце
+                result = result.strip()
+
+                # Удаляем строки, которые стали полностью пустыми ПОСЛЕ удаления комментариев
+                # НО только если они не между блоками кода (сохраняем одиночные пустые строки)
+                final_lines = []
+                prev_empty = False
+                for line in result.split('\n'):
+                    is_empty = not line.strip()
+                    if is_empty and prev_empty:
+                        continue  # пропускаем двойные пустые строки
+                    final_lines.append(line)
+                    prev_empty = is_empty
+
+                return '\n'.join(final_lines)
+
+            except Exception as e:
+                print(f"⚠️ Ошибка при очистке комментариев: {e}")
+                return text
+
+        # Определяем текущий язык
         current_lang = skill_name.lower()
 
-        # Очищаем, сохраняя структуру строк
+        # Очищаем комментарии
         solution_code = safe_clean_comments(solution_code, current_lang)
 
-        # 3.2. Удаляем лишние пустые строки, которые остались после комментариев
-        lines = [line for line in solution_code.splitlines() if line.strip()]
-        solution_code = "\n".join(lines).strip()
+        # Удаляем начальные пробелы в каждой строке НО сохраняем относительные отступы
+        lines = solution_code.split('\n')
+        if lines:
+            # Находим минимальный отступ (игнорируя пустые строки)
+            non_empty_lines = [line for line in lines if line.strip()]
+            if non_empty_lines:
+                min_indent = min(len(line) - len(line.lstrip()) for line in non_empty_lines)
+                # Удаляем минимальный отступ из всех строк
+                cleaned_lines = []
+                for line in lines:
+                    if line.strip():
+                        # Удаляем только общий минимальный отступ
+                        cleaned_lines.append(line[min_indent:])
+                    else:
+                        cleaned_lines.append(line)
+                solution_code = '\n'.join(cleaned_lines)
+            else:
+                solution_code = '\n'.join(lines)
 
-        print("✨ Код очищен (строки сохранены).")
+        # Финальная очистка: удаляем пустые строки в начале и конце
+        solution_code = solution_code.strip()
 
-        #todo Проверить что это работает
+        print("✨ Код очищен (комментарии удалены, отступы нормализованы, структура сохранена).")
 
-        # 4. Вставка кода (Посимвольная имитация печати)
-        print("⌨️ Фокусируюсь на редакторе...")
 
-        # Находим контейнер, который перехватывает клики (обычно это слой с текстом)
-        editor_overlay = page.locator('.monaco-editor [data-qa="editor-content"]').first
+        # ==========================================
+        # 4. ЧЕЛОВЕЧЕСКИЙ ВВОД КОДА
+        # ==========================================
+        print("⌨️ Подготавливаю редактор...")
 
-        # Если такого нет, кликаем просто по самому блоку редактора
-        if not editor_overlay.is_visible():
-            editor_overlay = page.locator('.monaco-editor').first
-
-        # Кликаем по визуальному слою, чтобы перевести фокус
-        editor_overlay.click()
-
-        # Теперь, когда фокус в редакторе, находим скрытую textarea
-        # и используем force=True, чтобы Playwright не ругался на перекрытие
-        editor_input = page.locator('.monaco-editor textarea').first
-        editor_input.focus()
-
-        page.wait_for_timeout(500)
-
-        # Инициализируем контроллер клавиатуры
         keyboard = Controller()
-
-        # 1. Фокусировка и подготовка
         page.bring_to_front()
-        editor_overlay = page.locator('.monaco-editor').first
-        editor_overlay.click()
-        page.wait_for_timeout(500)
 
-        # 2. Очистка (Cmd+A на Маке) через pynput
+        # ВАЖНО: сначала эмулируем человеческий фокус
+        enhance_isTrusted_compatibility(page)
+        time.sleep(random.uniform(0.3, 0.5))
+
+        # Затем очищаем редактор
         print("🧹 Очищаю старый код...")
         with keyboard.pressed(Key.cmd):
+            time.sleep(random.uniform(0.05, 0.12))
             keyboard.press('a')
+            time.sleep(random.uniform(0.04, 0.1))
             keyboard.release('a')
 
-        page.wait_for_timeout(200)
+        time.sleep(random.uniform(0.15, 0.3))
         keyboard.press(Key.backspace)
+        time.sleep(random.uniform(0.08, 0.15))
         keyboard.release(Key.backspace)
-        page.wait_for_timeout(300)
+        time.sleep(random.uniform(0.3, 0.6))
 
-        # 3. Подготовка текста
-        lines = solution_code.split('\n')
-        clean_solution_code = '\n'.join([line.lstrip() for line in lines])
+        # Запускаем человеческий ввод (внутри уже есть enhance_isTrusted_compatibility)
+        human_type_code(page, solution_code)
 
-        # Настройки для "умного" обхода
-        brackets = {'(': ')', '[': ']', '{': '}'}
-        quotes = {'"': '"', "'": "'"}
-        skip_next_char = None
-
-        print(f"🚀 Запуск системной печати через pynput ({len(clean_solution_code)} симв.)...")
-
-        # Сбрасываем состояние модификаторов на всякий случай
-        for k in [Key.cmd, Key.shift, Key.alt, Key.ctrl]:
-            keyboard.release(k)
-
-        for char in clean_solution_code:
-            # --- ЛОГИКА ПЕРЕШАГИВАНИЯ ---
-            if char == skip_next_char:
-                keyboard.press(Key.right)
-                keyboard.release(Key.right)
-                skip_next_char = None
-                continue
-
-            # --- ПЕЧАТЬ СИМВОЛА ---
-            if char == '\n':
-                keyboard.press(Key.space)
-                keyboard.release(Key.space)
-                keyboard.press(Key.enter)
-                keyboard.release(Key.enter)
-                page.wait_for_timeout(random.randint(250, 450))
-            elif char == '\t':
-                keyboard.press(Key.space)
-                keyboard.release(Key.space)
-                keyboard.press(Key.tab)
-                keyboard.release(Key.tab)
-            elif char == ' ':
-                keyboard.press(Key.space)
-                keyboard.release(Key.space)
-            else:
-                # pynput.typewriter-style печать одного символа
-                keyboard.type(char)
-
-            # --- ЛОГИКА ПОСЛЕ ПЕЧАТИ (Автозаполнение Monaco) ---
-
-            # Запоминаем кавычку, чтобы перешагнуть авто-пару
-            if char in quotes:
-                skip_next_char = quotes[char]
-            else:
-                skip_next_char = None
-
-            # Удаляем авто-закрывающуюся скобку
-            if char in brackets:
-                page.wait_for_timeout(60)  # Даем Monaco время вставить пару
-                keyboard.press(Key.right)
-                keyboard.release(Key.right)
-                keyboard.press(Key.backspace)
-                keyboard.release(Key.backspace)
-
-            # Пауза между символами (стабильность для macOS)
-            page.wait_for_timeout(random.randint(25, 45))
-
-        print("✅ Системная печать завершена.")
-
+        # ==========================================
         # 5. Запуск тестов
+        # ==========================================
         print("🧪 Запускаю тесты...")
         page.locator('[data-qa="execute-code-button"]').click()
         page.wait_for_timeout(6000)
 
-        # 6. ПРОВЕРКА РЕЗУЛЬТАТОВ (SQL + ОБЩИЙ СЛУЧАЙ)
+        # 6. ПРОВЕРКА РЕЗУЛЬТАТОВ
         test_chips = page.locator('[data-qa="admin-test"]').all()
         all_tests_passed = True
         error_report = ""
 
-        # ПРОВЕРКА ДЛЯ SQL (табличный вид)
+        # Проверка для SQL
         sql_actual_locator = page.locator('[data-qa="sql-actual-result"]')
         sql_expected_locator = page.locator('[data-qa="sql-expected-result"]')
         sql_error_locator = page.locator('[data-qa="sql-run-error"]')
 
         if sql_error_locator.is_visible():
-            # Случай 1: Ошибка в самом SQL запросе (синтаксис)
             all_tests_passed = False
             error_report = f"SQL SYNTAX ERROR: {sql_error_locator.inner_text().strip()}"
-
         elif sql_actual_locator.is_visible() and sql_expected_locator.is_visible():
-            # Случай 2: Запрос выполнился, но нужно сравнить таблицы
-            # Проверяем наличие плашки "Результат не сходится"
             mismatch_indicator = page.locator('[data-qa="chip"]:has-text("Результат не сходится")')
-
             if mismatch_indicator.is_visible():
                 all_tests_passed = False
                 actual_data = sql_actual_locator.inner_text().strip()
@@ -555,8 +940,6 @@ def solve_test_practice(page, skill_name):
                     f"--- ОЖИДАЕМЫЙ РЕЗУЛЬТАТ ---\n{expected_data}\n"
                     f"Внимательно проверь порядок строк (ORDER BY) и точность значений."
                 )
-
-        # ПРОВЕРКА ДЛЯ ОБЫЧНЫХ ЗАДАЧ (Python/JS/PHP и т.д.)
         elif test_chips:
             chips_to_check = test_chips[:3]
             for index, chip in enumerate(chips_to_check):
@@ -571,9 +954,7 @@ def solve_test_practice(page, skill_name):
                     all_tests_passed = False
                     error_report += f"\nОШИБКА В ТЕСТЕ {index + 1}:\nОжидалось: {expected}\nПолучено: {actual}\n"
                     break
-
         elif page.locator('[data-qa="test-case-actual-result"]').first.is_visible():
-            # Стандартная проверка одиночного результата
             res_locator = page.locator('[data-qa="test-case-actual-result"]').first
             res_text = res_locator.inner_text()
             if any(x in res_text.lower() for x in ["error", "exception", "expected", "не совпадает"]):
@@ -590,12 +971,9 @@ def solve_test_practice(page, skill_name):
 
                 if "assessment.hh.ru/code" in page.url:
                     return "CONTINUE"
-
-                # Если кнопки "Следующая" нет, проверяем не попали ли мы на финиш
                 if "applicant/contest_result" in page.url:
                     return "FINISH"
 
-                # Запасной вариант: если нет кнопки, но и не финиш, подождем и проверим еще раз
                 page.wait_for_timeout(2000)
                 if "applicant/contest_result" in page.url:
                     return "FINISH"
@@ -623,9 +1001,9 @@ def run_full_test(page, skill_name, mode):
             page.goto("https://hh.ru/applicant/skill_verifications/methods")
             break
 
-        if mode == Mode.THEORY:
+        if mode == config.Mode.THEORY:
             result = solve_test_theory(page, skill_name)
-        elif mode == Mode.PRACTICE:
+        elif mode == config.Mode.PRACTICE:
             result = solve_test_practice(page, skill_name)
         else:
             print(f"❌ Неизвестный режим: {mode}")
@@ -644,59 +1022,48 @@ def run_full_test(page, skill_name, mode):
             break
 
 def test_hh_navigation():
-    user_data_dir = os.path.expanduser("~/Documents/HH_Automation_Profile")
-
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
-            user_data_dir,
-            headless=False,
-            slow_mo=10,
+            config.USER_DATA_DIR,
+            headless=config.HEADLESS,
+            slow_mo=config.SLOW_MO,
             args=["--start-maximized"],
-            permissions = ['clipboard-write']
+            permissions=['clipboard-write']
         )
 
         page = context.new_page()
-        page.set_viewport_size({'width': 1080, 'height': 1820})
+        page.set_viewport_size({'width': config.WINDOW_WIDTH, 'height': config.WINDOW_HEIGHT})
         # Переход на страницу со списком всех тестов
         page.goto("https://hh.ru/applicant/skill_verifications/methods")
         print('\n')
 
-        for task in TASKS_TO_RUN:
+        for task in config.TASKS_TO_RUN:
             skill_name = task["name"]
             print(f"🔎 Обработка навыка: {skill_name}")
 
             strict_skills = ["java", "javascript", "sql", "postgresql"]
 
             if skill_name.lower() in strict_skills:
-                # Вместо поиска по всей карточке, ищем строгое совпадение в заголовке внутри карточки
-                # Это гарантирует, что SQL не найдет PostgreSQL
                 card = page.locator("[data-qa='skills-verification-method-container']").filter(
                     has=page.locator("[data-qa='verification-method-title']",
                                      has_text=re.compile(rf"^{re.escape(skill_name)}$", re.I))
                 )
             else:
-                # Для остальных навыков оставляем как было (поиск подстроки во всей карточке)
                 card = page.locator("[data-qa='skills-verification-method-container']").filter(has_text=skill_name)
 
-            # Обязательный .first для предотвращения ошибки strict mode violation
             card = card.first
 
             if card.count() > 0:
                 print(f"🎯 Кликаю по карточке: {skill_name}")
 
-                # Скроллим и заходим внутрь
                 card.scroll_into_view_if_needed()
                 card.click()
 
-                # Пауза для прогрузки интерфейса настройки
                 page.wait_for_timeout(2000)
 
-                # 1. Настраиваем уровень и режим (Теория/Практика), нажимаем "Начать тест"
                 if hh_test_setup(page, task):
                     print(f"✅ Тест {skill_name} успешно запущен!")
 
-                    # 2. Запускаем основной цикл прохождения
-                    # Передаем mode из конфига, чтобы скрипт знал, какой алгоритм решения использовать
                     run_full_test(page, skill_name, task['mode'])
                 else:
                     print(f"⚠️ Не удалось настроить или запустить тест для {skill_name}. Иду к следующему.")
@@ -705,3 +1072,6 @@ def test_hh_navigation():
 
         print("\n🏁 Все задачи из конфига обработаны.")
         context.close()
+
+# todo сделать новый возможный тест - на тренажере, без перехода к основному тесту, чтобы перестать руинить аккаунты
+# todo Сделать дополнительную проверку в python
