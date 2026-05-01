@@ -3,6 +3,8 @@ import requests
 import json
 import time
 import re
+import pyperclip
+from pynput.keyboard import Key, Controller
 from playwright.sync_api import sync_playwright
 import config  # Импортируем наш конфиг
 
@@ -145,7 +147,7 @@ def solve_form_with_ai(page, vacancy_context=""):
         letter_input.press_sequentially(final_letter.replace('\\n', '\n'))
 
         page.locator('[data-qa="vacancy-response-submit-popup"]').click()
-        print("Анкета отправлена успешно.")
+        print(f"Анкета отправлена успешно - {page.url} ")
     except Exception as e:
         print(f"Ошибка заполнения анкеты: {e}")
 

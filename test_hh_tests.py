@@ -100,30 +100,51 @@ def hh_test_setup(page, task):
         return False
 
     # 2. Выбор режима (Теория или Практика)
-    mode_qa_part = "theory" if task['mode'] == config.Mode.THEORY else "practice"
+    if task['mode'] == "Теория":
+        mode_qa_part = "theory"
+    elif task['mode'] == "Практика":
+        mode_qa_part = "practice"
+    else:
+        mode_qa_part = "trainingg"
     mode_card = page.locator(f"label:has(input[data-qa='applicant-keyskills-verification-methods-kind-card-{mode_qa_part}'])")
 
     if mode_card.is_visible():
         mode_card.click(force=True)
+        page.wait_for_timeout(500)
+    if mode_qa_part == "trainingg":
+        page.locator(f"label:has(input[data-qa='applicant-keyskills-verification-methods-kind-card-practice'])").click(force=True)
         page.wait_for_timeout(500)
     else:
         print(f"❌ Режим {task['mode']} не найден.")
         return False
 
     # 3. Нажатие на кнопку "Начать тест"
-    start_button = page.locator(f"[data-qa='applicant-keyskills-verification-methods-start-{mode_qa_part}']")
-    if not start_button.is_visible():
-        start_button = page.get_by_role("button", name="Начать тест")
+    if mode_qa_part == "trainingg":
+        start_button = page.locator(f"[data-qa='applicant-keyskills-verification-methods-start-{mode_qa_part}']")
+        if not start_button.is_visible():
+            start_button = page.get_by_role("button", name="Потренироваться")
 
-    if start_button.is_visible() and start_button.is_enabled():
-        print(f"🚀 Нажимаю 'Начать тест' для {task['name']}...")
-        start_button.click()
-        page.locator('[data-qa="modal-next-btn"]').click()
-        page.locator('[data-qa="modal-start-btn"]').click()
-        return True
+        if start_button.is_visible() and start_button.is_enabled():
+            print(f"🚀 Нажимаю 'Потренироваться' для {task['name']}...")
+            start_button.click()
+            return True
+        else:
+            print(f"⚠️ Кнопка старта не активна или не найдена.")
+            return False
     else:
-        print(f"⚠️ Кнопка старта не активна или не найдена.")
-        return False
+        start_button = page.locator(f"[data-qa='applicant-keyskills-verification-methods-start-{mode_qa_part}']")
+        if not start_button.is_visible():
+            start_button = page.get_by_role("button", name="Начать тест")
+
+        if start_button.is_visible() and start_button.is_enabled():
+            print(f"🚀 Нажимаю 'Начать тест' для {task['name']}...")
+            start_button.click()
+            page.locator('[data-qa="modal-next-btn"]').click()
+            page.locator('[data-qa="modal-start-btn"]').click()
+            return True
+        else:
+            print(f"⚠️ Кнопка старта не активна или не найдена.")
+            return False
 
 def solve_test_theory(page, skill_name):
     # Даем странице время прогрузиться
@@ -674,7 +695,7 @@ def human_type_code(page, solution_code, brackets=None, quotes=None):
 
     print(f"✅ Человеческий ввод завершен. Опечаток исправлено: {biometric.typo_count}")
 
-def solve_test_practice(page, skill_name):
+def solve_test_practice(page, skill_name, mode):
     print(f"🛠 Работаю над практической задачей по {skill_name}...")
 
     time.sleep(5)
@@ -967,6 +988,10 @@ def solve_test_practice(page, skill_name):
             if submit_btn.is_enabled():
                 print("➡️ Нажимаю 'Отправить решение'...")
                 submit_btn.click()
+
+                if mode == config.Mode.TRAINING:
+                    page.locator('[data-qa="finish-training-button"]').click()
+
                 page.wait_for_timeout(4000)
 
                 if "assessment.hh.ru/code" in page.url:
@@ -1004,7 +1029,9 @@ def run_full_test(page, skill_name, mode):
         if mode == config.Mode.THEORY:
             result = solve_test_theory(page, skill_name)
         elif mode == config.Mode.PRACTICE:
-            result = solve_test_practice(page, skill_name)
+            result = solve_test_practice(page, skill_name, mode)
+        elif mode == config.Mode.TRAINING:
+            result = solve_test_practice(page, skill_name, mode)
         else:
             print(f"❌ Неизвестный режим: {mode}")
             break
@@ -1073,5 +1100,4 @@ def test_hh_navigation():
         print("\n🏁 Все задачи из конфига обработаны.")
         context.close()
 
-# todo сделать новый возможный тест - на тренажере, без перехода к основному тесту, чтобы перестать руинить аккаунты
 # todo Сделать дополнительную проверку в python
