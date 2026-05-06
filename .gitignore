@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+
+# --- Playwright / Browser ---
+# Папка с данными пользователя (куки, сессии, хранилище)
+HH_Automation_Profile/
+# Скриншоты и видео тестов (если включены в playwright)
+test-results/
+playwright-report/
+blob-report/
+playwright/.local-browsers
+
+# --- Проектная специфика (HH Bot) ---
+# Файлы авторизации и логов
+auth.json
+*.log
+# Если у тебя есть папка для временных файлов или выгрузок
+temp/
+downloads/
+
+# --- IDE (PyCharm / VS Code) ---
+.idea/
+.vscode/
+*.swp
+*.bak
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+HH_Automation_Profile
+__pycache__
+.idea
+__pycache__
