@@ -4,6 +4,9 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_DATA_DIR = os.path.join(BASE_DIR, "HH_Automation_Profile")
 
+# --- Настройка ОС ---
+OS = 'Win' # Win - Windows/Linux , Mac - Mac OS
+
 # --- НАСТРОЙКИ БРАУЗЕРА ---
 HEADLESS = False # False - Чтобы окно браузера появилось, True - Чтобы выполнение было в фоне
 WINDOW_WIDTH = 1080 # Ширина окна
