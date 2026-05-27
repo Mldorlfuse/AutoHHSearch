@@ -42,7 +42,9 @@ AutoHHSearch — это продвинутый бот для автоматиз�
 ## Видео демонстрации работы 
 
 Автоматический отклик на вакансии - https://youtu.be/7RDsWpkxT-M
+
 Автоматическое прохождение тестов - https://youtu.be/R4PTWPzlx2E
+
 Решение задач - https://youtu.be/boNQ33yBZzg
 
 ## 📜 Настройка файла config
