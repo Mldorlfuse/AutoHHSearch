@@ -59,6 +59,8 @@ class VacancyPage(BasePage):
             self.page.locator(VacancyLocators.CHATIK_SEND_BTN).click()
         # Если стандартное поле
         else:
+            if self.page.locator(VacancyLocators.RESPONDED_SUCCESS_BTN).is_visible():
+                self.page.locator(VacancyLocators.RESPONDED_SUCCESS_BTN).click()
             area = self.page.locator(VacancyLocators.STANDARD_TEXTAREA_WRAPPER).first
             area.press_sequentially(cover_letter)
             submit = self.page.locator(VacancyLocators.SUBMIT_POPUP_BTN)

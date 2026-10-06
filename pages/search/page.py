@@ -10,7 +10,8 @@ from pages.search.locators import SearchLocators
 class SearchPage(BasePage):
     def start_search(self):
         processed_vacancies = set()
-        self.page.goto('https://hh.ru/applicant/autosearch.xml')
+        self.page.goto('https://hh.ru/applicant/favorites')
+        self.page.locator('[data-qa="wrapper-favorites-tab-searches"]').click()
 
         while True:
             btn = self.page.locator(SearchLocators.TAG).first
@@ -53,4 +54,5 @@ class SearchPage(BasePage):
                 processed_vacancies.add(v_id)
                 time.sleep(10)
 
-            self.page.goto('https://hh.ru/applicant/autosearch.xml')
+            self.page.goto('https://hh.ru/applicant/favorites')
+            self.page.locator('[data-qa="wrapper-favorites-tab-searches"]').click()

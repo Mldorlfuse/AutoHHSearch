@@ -16,6 +16,7 @@ class VacancyLocators:
     ANY_TEXTAREA = 'textarea'
 
     # Поля ввода и отправки в модальном окне
+    RESPONDED_SUCCESS_BTN = '[data-qa="responded-success-attach-cover-letter"]'
     SUBMIT_POPUP_BTN = '[data-qa="vacancy-response-submit-popup"]'
     LETTER_TOGGLE = '[data-qa="vacancy-response-letter-toggle"]'
     # Используем CSS-селектор с перечислением через запятую (ИЛИ)
